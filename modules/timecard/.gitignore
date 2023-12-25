@@ -1,0 +1,15 @@
+export_syms
+i386
+machine
+x86
+bus_if.h
+device_if.h
+opt_global.h
+pci_if.h
+serdev_if.h
+*.c-*
+*.h-*
+*.kld
+*.ko
+*.o
+*.out
