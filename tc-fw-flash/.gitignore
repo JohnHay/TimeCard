@@ -1,0 +1,7 @@
+.depend*
+*.c-*
+*.debug
+*.full
+*.h-*
+*.o
+*.out
