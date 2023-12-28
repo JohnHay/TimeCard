@@ -1,4 +1,3 @@
-# Makefile for mypci driver
 
 KMOD=	timecard
 SRCS=	timecard.c

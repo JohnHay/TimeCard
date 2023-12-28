@@ -1,7 +1,6 @@
 
 # Use realinstallconfig to install config files
 
-PACKAGE=timecard
 PROG=	timecard
 #MAN=	timecard.8
 MAN=
@@ -13,11 +12,10 @@ CONFGROUPS=	CONFLOG RCD
 CONFLOGDIR=	/usr/local/etc/syslog.d
 CONFLOG=	timecard.conf
 CONGLOGMODE=	644
-CONFLOGPACKAGE=	timecard
+
 RCD=		timecard.sh
 RCDNAME=	timecard
 RCDDIR=		/usr/local/etc/rc.d
-RCDPACKAGE=	timecard
 
 .if USE_BME
 SRCS+=	BME280_driver-master/bme280.c

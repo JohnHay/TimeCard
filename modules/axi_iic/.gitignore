@@ -4,6 +4,7 @@ machine
 x86
 bus_if.h
 device_if.h
+iicbus_if.h
 opt_global.h
 pci_if.h
 serdev_if.h

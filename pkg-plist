@@ -1,0 +1,8 @@
+sbin/timecard
+sbin/tc-fw-flash
+etc/rc.d/timecard
+etc/syslog.d/timecard.conf
+/boot/modules/timecard.ko
+/boot/modules/axi_iic.ko
+/boot/modules/axi_spi_timecard.ko
+/boot/modules/uart_timecard.ko

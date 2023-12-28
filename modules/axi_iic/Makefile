@@ -1,4 +1,3 @@
-# Makefile for axi_iic driver
 
 KMOD=	axi_iic
 SRCS=	axi_iic.c

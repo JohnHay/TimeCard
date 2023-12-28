@@ -1,4 +1,3 @@
-# Makefile for mypci driver
 
 KMOD=	uart_timecard
 SRCS=	uart_bus_timecard.c

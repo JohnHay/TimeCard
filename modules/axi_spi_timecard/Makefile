@@ -1,6 +1,3 @@
-# Makefile for axi_qspi_timecard driver
-
-#.PATH:	${SRCTOP}/sys/dev/xilinx
 
 KMOD=	axi_spi_timecard
 SRCS=	axi_spi_timecard.c

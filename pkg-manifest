@@ -1,0 +1,17 @@
+name: timecard
+version: "0.1"
+origin: local/timecard
+maintainer: john@sanren.ac.za
+prefix: /usr/local
+comment: OCP TAP TimeCard driver and software
+desc: <<EOD
+OCP TAP TimeCard FreeBSD driver and software to synchronize
+kernel time to UTC.
+
+Provide a ntpd shm(28) driver.
+EOD
+categories [ sysutils ]
+licenselogic: single
+licenses: [ BSD-2-Clause ]
+www none
+

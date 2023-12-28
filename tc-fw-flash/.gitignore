@@ -1,3 +1,4 @@
+tc-fw-flash
 .depend*
 *.c-*
 *.debug
