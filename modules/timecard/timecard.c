@@ -27,7 +27,7 @@
  */
 
 /*
- * Driver for the OCP TAP TimeCard
+ * FreeBSD driver for the OCP TAP TimeCard
  *
  */
 
@@ -56,9 +56,8 @@
 #include <timecard_bus.h>
 #include <timecard.h>
 
-#define TC_VERSION		0x00000003	/* MMmmbbbb Major, minor, build */
+#define TC_VERSION		0x00000003
 
-/* Maybe move to timecard_defs.h ? */
 #define TC_IMAGE_VER_OFFS	0x00020000
 #define TC_CORE_LIST_BASE	0x01300000
 #define TC_PCIE_MSI_ENABLE_REG	0x00001800
@@ -609,7 +608,6 @@ struct timecard_bar {
 	int			b_type;
 };
 
-/* Return various status registers */
 struct timecard_status_bits {
 	bool clk_in_sync;
 	bool clk_in_holdover;
@@ -626,10 +624,8 @@ struct timecard_status_bits {
 	bool tod_leap_valid;
 	bool gnss_fix_ok;
 	uint8_t gnss_fix;
-//	bool gnss_fix_valid;
 	uint8_t gnss_sat_num_seen;
 	uint8_t gnss_sat_num_locked;
-//	bool gnss_sat_num_valid;
 	bool pps_slave_period_error;
 	bool pps_slave_pulse_width_error;
 };
@@ -732,6 +728,10 @@ static int timecard_gnss1_baud = 115200;
 SYSCTL_INT(_hw_timecard, OID_AUTO, gnss1_baud, CTLFLAG_RDTUN,
     &timecard_gnss1_baud, 0, "GNSS1 baud rate");
 
+static int timecard_tc_enable = 1;
+SYSCTL_INT(_hw_timecard, OID_AUTO, timecounter_enable, CTLFLAG_RDTUN,
+    &timecard_tc_enable, 0, "timecounter enable");
+
 static struct timecard_pciids {
 	uint32_t device;
 	const char *desc;
@@ -810,12 +810,6 @@ timecard_corelist_read(struct timecard_softc *sc, int countonly)
 		tcl->cl_version = bus_read_4(mres, core_offs + 0x08);
 		tcl->cl_offs_start = bus_read_4(mres, core_offs + 0x0c);
 		tcl->cl_offs_end = bus_read_4(mres, core_offs + 0x10);
-#if 0
-		if (tcl->cl_offs_start != 0xffffffff) {
-			tcl->cl_offs_start += base_offset;
-			tcl->cl_offs_end += base_offset;
-		}
-#endif
 		tcl->cl_intr_num = bus_read_4(mres, core_offs + 0x14);
 		tcl->cl_sensitivity = bus_read_4(mres, core_offs + 0x18);
 		for (i = 0; i < 9; i++)
@@ -1330,7 +1324,7 @@ timecard_init(struct timecard_softc *sc)
 	if (sc->sc_nports == 0) {
 		sc->sc_cl = dummy_corelist;
 		sc->sc_nports = sizeof(dummy_corelist) / sizeof(struct timecard_corelist);
-		device_printf(sc->sc_dev, "timecard_corelist_read did not find list, using fake list %d\n", sc->sc_nports);
+		device_printf(sc->sc_dev, "timecard_corelist_read did not find list, using hard coded list %d\n", sc->sc_nports);
 	} else {
 		sc->sc_cl = malloc(sc->sc_nports * sizeof(struct timecard_corelist), M_TIMECARD, M_WAITOK|M_ZERO);
 		timecard_corelist_read(sc, 0);
@@ -1354,10 +1348,6 @@ timecard_init(struct timecard_softc *sc)
 			device_printf(sc->sc_dev, "Broken CoreList. Please update card firmware! Wrong end offset, start 0x%X, end 0x%X, %s\n",
 			    tcl->cl_offs_start, tcl->cl_offs_end, tcl->cl_magic);
 			return (ENXIO);
-			//device_printf(sc->sc_dev, "CoreList fixing wrong end offset, start 0x%X, end 0x%X, %s\n",
-			//    port->offs_start, port->offs_end, port->magic);
-			/* XXX Guess, should be ok for IIC CLOCK */
-			//port->offs_end = port->offs_start + 0xFFF;
 		}
 		offs_start = tcl->cl_offs_start;
 		if (offs_start != 0xffffffff)
@@ -1488,9 +1478,6 @@ timecard_init(struct timecard_softc *sc)
 			sc->sc_version.pps_source_selector = tcl->cl_version;
 			break;
 		case TC_CORE_TYPE_FPGA_VER:
-#if 0
-			sc->sc_version.fpga = bus_read_4(mres, TC_IMAGE_VER_OFFS);
-#endif
 			break;
 		case TC_CORE_TYPE_PPS_SLAVE:
 			val = bus_read_4(mres, offs_start + TC_GEN_VERSION_REG);
@@ -1503,9 +1490,6 @@ timecard_init(struct timecard_softc *sc)
 			sc->sc_pps_slave_offset = offs_start;
 			break;
 		case TC_CORE_TYPE_DUMMY:
-#if 0
-			sc->sc_version.axi_dummy = tcl->cl_version;
-#endif
 			break;
 		case TC_CORE_TYPE_AXI_PCIE:
 			sc->sc_version.axi_pcie = tcl->cl_version;
@@ -1554,10 +1538,6 @@ timecard_init(struct timecard_softc *sc)
 		bus_write_4(mres, sc->sc_gpio_ext_offset + AXI_GPIO_X_GPIO2_REG, 0x00000000);
 
 	timecard_add_sysctl(sc);
-#if 0
-	/* XXX Should this rather be done in axi_spi_timecard.c? */
-	kern_setenv("hint.mx25l.0.at", "spibus");
-#endif
 	return 0;
 }
 
@@ -1614,10 +1594,6 @@ timecard_attach(device_t dev)
 	bus_space_handle_t bsh;
 	bus_space_tag_t bst;
 
-#if 0
-	printf("TimeCard Attach for : deviceID : 0x%x\n", pci_get_devid(dev));
-#endif
-
 	/* Look up our softc and initialize its fields. */
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -1645,9 +1621,6 @@ timecard_attach(device_t dev)
 	error = rman_manage_region(&sc->sc_iomem, start, end);
 	if (error)
 		goto fail;
-#if 0
-	printf("rman iomem start %lx, end %lx, size %lx\n", start, end, size);
-#endif
 
 	error = timecard_init(sc);
 	if (error) {
@@ -1656,18 +1629,14 @@ timecard_attach(device_t dev)
 	}
 	nports = sc->sc_nports;
 
-#if 1
 	/* If interrupts are issued before we are ready, the kernel will panic. */ 
 	pci_disable_busmaster(dev);
-	sc->sc_msi_vector_offset = 1; /* irq start ar 0, vector start at 1 */
+	sc->sc_msi_vector_offset = 1; /* irq start at 0, vector start at 1 */
 	sc->sc_msi = pci_msix_count(dev);
 	if (sc->sc_msi) {
 		if (pci_alloc_msix(dev, &sc->sc_msi) == 0) {
 			sc->sc_cap_msi_mask = true;
 			sc->sc_msi_vector_offset += 32;
-#if 0
-			device_printf(dev, "TimeCard msi-x %d\n", sc->sc_msi);
-#endif
 		} else
 			sc->sc_msi = 0;
 	}
@@ -1675,20 +1644,13 @@ timecard_attach(device_t dev)
 		sc->sc_msi = pci_msi_count(dev);
 		if (sc->sc_msi != TC_MAX_MSI_IRQ)
 			device_printf(dev, "msi_count %d\n", sc->sc_msi);
-		if (pci_alloc_msi(dev, &sc->sc_msi) == 0) {
-#if 0
-			device_printf(dev, "TimeCard msi %d\n", sc->sc_msi);
-#endif
-		}
+		pci_alloc_msi(dev, &sc->sc_msi);
 	}
 	if (sc->sc_msi == 0)
 		device_printf(dev, "failed to initialize msi interrupts\n");
-#if 1
 	error = pci_enable_busmaster(dev);
 	if (error)
 		device_printf(dev, "pci_enable_busmaster failed %d\n", error);
-#endif
-#endif
 
 	mtx_init(&sc->sc_clk_cntrl_mtx, "TC CLK Cntrl", NULL, MTX_SPIN);
 
@@ -1706,21 +1668,12 @@ timecard_attach(device_t dev)
 	}
 	if (sc->sc_cap_msi_mask)
 		timecard_enable_intr(sc, sc->sc_fpga_pps_port->p_intr_num);
-#if 0
-	printf("pps int installed, intr %d, rid %d, IRQ %lu, offset %u\n",
-	    sc->sc_fpga_pps_port->p_intr_num, sc->sc_irid, rman_get_start(sc->sc_ires),
-	    sc->sc_fpga_pps_offset);
-#endif
 	bus_write_4(bar->b_res, sc->sc_fpga_pps_offset + TC_TSTMPR_CNTRL_REG, 1);
 	bus_write_4(bar->b_res, sc->sc_fpga_pps_offset + TC_TSTMPR_STS_REG, 1);
 	bus_write_4(bar->b_res, sc->sc_fpga_pps_offset + TC_TSTMPR_IRQMSK_REG, 1);
 	bus_write_4(bar->b_res, sc->sc_fpga_pps_offset + TC_TSTMPR_IRQ_REG, 1);
 	timecard_cap_tstmp();
 
-#if 0
-	/************************************************************************/
-	printf("nports %d\n", nports);
-#endif 
 	for (idx = 0; idx < nports; idx++) {
 		uint32_t reg_start;
 		port = &sc->sc_port[idx];
@@ -1735,11 +1688,6 @@ timecard_attach(device_t dev)
 			reg_start = AXI_UART_OFFSET;
 			break;
 		case TC_CORE_TYPE_AXI_IIC:
-#if 0
-			/* For now only the first one*/
-			if (port->instance != 0)
-				continue;
-#endif
 			port->p_type = TIMECARD_TYPE_AXI_IIC;
 			break;
 		case TC_CORE_TYPE_AXI_QSPI:
@@ -1749,7 +1697,6 @@ timecard_attach(device_t dev)
 			continue;
 		}
 
-		//printf("Start with uart %d %d\n", idx, port->indx);
 		port->p_bar = bar;
 		bar_start = rman_get_start(bar->b_res);
 		start = bar_start + port->p_offs_start + reg_start;
@@ -1766,49 +1713,19 @@ timecard_attach(device_t dev)
 		bus_space_subregion(bst, bsh, ofs, size, &bsh);
 		rman_set_bushandle(port->p_rres, bsh);
 		rman_set_bustag(port->p_rres, bst);
-		//printf("allocated\n");
 
 		port->p_dev = device_add_child(dev, NULL, -1);
-		if (port->p_dev != NULL) {
-			//printf("device_add_child succeeded\n");
+		if (port->p_dev != NULL)
 			device_set_ivars(port->p_dev, (void *)port);
-			device_set_desc(port->p_dev, port->p_cl->cl_magic);
-		}
-#if 0
-		printf("added child for %d %s\n", idx, device_get_desc(port->p_dev)/*port->magic*/);
-#endif
 	}
-	/************************************************************************/
 
-#if 0
-	printf("p and a all children\n");
-#endif
 	/* Probe and attach our children. */
 	for (idx = 0; idx < sc->sc_nports; idx++) {
 		port = &sc->sc_port[idx];
 		if (port->p_dev == NULL)
 			continue;
-#if 0
-		printf("attempting device_probe_and_attach %d, %s\n", idx, port->p_cl->cl_magic);
-#endif
 		error = device_probe_and_attach(port->p_dev);
-#if 0
-		printf("attempted device_probe_and_attach %d (err = %d), %s, %s\n", idx, error,
-		    device_get_desc(port->p_dev), port->p_cl->cl_magic);
-		if (error) {
-			printf("error ret %d\n", error);
-			device_delete_child(dev, port->p_dev);
-			port->p_dev = NULL;
-		}
-		printf("ret %d\n", error);
-#endif
 	}
-
-#if 0
-	error = pci_enable_busmaster(dev);
-	if (error)
-		printf("pci_enable_busmaster failed %d\n", error);
-#endif
 
 	sc->sc_cdev = make_dev(&timecard_cdevsw, device_get_unit(dev),
 	    UID_ROOT, 123, 0660, "timecard%u", device_get_unit(dev));
@@ -1821,11 +1738,11 @@ timecard_attach(device_t dev)
 	sc->sc_tc.tc_name = "TimeCard";
 	sc->sc_tc.tc_quality = 500;
 	sc->sc_tc.tc_flags = TC_FLAGS_SUSPEND_SAFE; /* True? */
-	/* XXX Make it tunable? */
-#if 1
-	sc->sc_tc.tc_priv = sc;
-	tc_init(&sc->sc_tc);
-#endif
+
+	if (timecard_tc_enable) {
+		sc->sc_tc.tc_priv = sc;
+		tc_init(&sc->sc_tc);
+	}
 
 	return (0);
 fail:
@@ -1900,39 +1817,6 @@ timecard_detach(device_t dev)
 	return (0);
 }
 
-/* Called during system shutdown after sync. */
-
-static int
-timecard_shutdown(device_t dev)
-{
-
-	printf("TimeCard shutdown!\n");
-	return (0);
-}
-
-/*
- * Device suspend routine.
- */
-static int
-timecard_suspend(device_t dev)
-{
-
-	printf("TimeCard suspend!\n");
-	return (0);
-}
-
-/*
- * Device resume routine.
- */
-static int
-timecard_resume(device_t dev)
-{
-
-	printf("TimeCard resume!\n");
-	return (0);
-}
-
-
 static struct resource *
 timecard_bus_alloc_resource(device_t dev, device_t child, int type, int *rid,
     rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
@@ -1955,16 +1839,9 @@ timecard_bus_alloc_resource(device_t dev, device_t child, int type, int *rid,
 	if (type == SYS_RES_IRQ) {
 		sc = device_get_softc(dev);
 		*rid = port->p_intr_num + sc->sc_msi_vector_offset;
-#if 0
-		printf("timecard_bus_alloc_resource IRQ, rid %d, start %lu, end %lu, count %lu, flags %u\n",
-		    *rid, start, end, count, flags);
-#endif
 		res = BUS_ALLOC_RESOURCE(device_get_parent(dev), dev, type, rid, start, end, count, flags | RF_SHAREABLE);
 		if (res != NULL)
 			start = rman_get_start(res);
-#if 0
-		printf("gen: %p, rid %d, irq %lu\n", res, *rid, start);
-#endif
 		return res;
 	}
 	if (rid == NULL || *rid != 0)
@@ -2020,13 +1897,8 @@ timecard_bus_release_resource(device_t dev, device_t child, int type, int rid,
 	port = device_get_ivars(child);
 	KASSERT(port != NULL, ("%s %d", __func__, __LINE__));
 
-	if (type == SYS_RES_IRQ) {
-#if 0
-		printf("timecard_bus_release_resource type %d, rid %d, res %p\n",
-		    type, rid, res);
-#endif
+	if (type == SYS_RES_IRQ)
 		return BUS_RELEASE_RESOURCE(device_get_parent(dev), dev, type, rid, res);
-	}
 
 	if (rid != 0 || res == NULL)
 		return (EINVAL);
@@ -2147,10 +2019,6 @@ timecard_bus_read_ivar(device_t dev, device_t child, int index, uintptr_t *resul
 	case TIMECARD_IVAR_TYPE:
 		*result = port->p_type;
 		break;
-#if 0
-	case TIMECARD_IVAR_DESC:
-		*result = port->p_cl->cl_magic;
-#endif
 	default:
 		return (ENOENT);
 	}
@@ -2206,9 +2074,6 @@ static device_method_t timecard_methods[] = {
 	DEVMETHOD(device_probe,			timecard_probe),
 	DEVMETHOD(device_attach,		timecard_attach),
 	DEVMETHOD(device_detach,		timecard_detach),
-	DEVMETHOD(device_shutdown,		timecard_shutdown),
-	DEVMETHOD(device_suspend,		timecard_suspend),
-	DEVMETHOD(device_resume,		timecard_resume),
 
 	DEVMETHOD(bus_alloc_resource,		timecard_bus_alloc_resource),
 	DEVMETHOD(bus_release_resource,		timecard_bus_release_resource),
