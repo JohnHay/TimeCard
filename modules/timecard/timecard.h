@@ -54,22 +54,22 @@
 
 /* Return the card time and kernel time */
 struct timecard_time {
-	struct timespec card;
-	struct timespec kernel;
-	uint64_t tsc;
-	u_int cpuid;
+	struct timespec card;	/* time read from card */
+	struct timespec kernel;	/* kernel timestamp */
+	uint64_t tsc;		/* TSC timestamp */
+	u_int cpuid;		/* CPU ID on which it happened */
 };
 
 /* Return various status registers */
 struct timecard_status {
-	uint32_t clk_status;
-	int32_t clk_offset;
-	int32_t clk_drift;
-	uint32_t tod_status;
-	uint32_t tod_utc_status;
-	uint32_t tod_gnss_status;
-	uint32_t tod_sat_num;
-	uint32_t pps_slave_status;
+	uint32_t clk_status;		/* ClockStatus */
+	int32_t clk_offset;		/* ClockStatusOffset - two's compliment */
+	int32_t clk_drift;		/* ClockStatusDrift - two's compliment */
+	uint32_t tod_status;		/* TodSlaveStatus */
+	uint32_t tod_utc_status;	/* TodSlaveUtcStatus */
+	uint32_t tod_gnss_status;	/* TodSlaveAntennaStatus */
+	uint32_t tod_sat_num;		/* TodSlaveSateliteNumber */
+	uint32_t pps_slave_status;	/* PpsSlaveStatus */
 };
 
 #define TC_CLK_CONTROL			(1 << 0)
@@ -89,23 +89,23 @@ struct timecard_status {
 struct timecard_control {
 	uint32_t read;
 	uint32_t write;
-	uint32_t clk_control;
-	uint32_t clk_select;
-	uint32_t clk_time_adj_nsec;
-	uint32_t clk_time_adj_sec;
-	uint32_t clk_offset_adj_value;
-	uint32_t clk_offset_adj_interval;
-	uint32_t clk_drift_adj_value;
-	uint32_t clk_drift_adj_interval;
-	uint32_t clk_insync_threshold;
-	uint32_t clk_servo_offset_Kp;
-	uint32_t clk_servo_offset_Ki;
-	uint32_t clk_servo_drift_Kp;
-	uint32_t clk_servo_drift_Ki;
-	uint32_t pps_slave_control;
-	uint32_t pps_slave_cable_delay;
-	uint32_t tod_control;
-	uint32_t tod_uart_baud_rate;
+	uint32_t clk_control;			/* ClockControl */
+	uint32_t clk_select;			/* ClockSelect */
+	uint32_t clk_time_adj_nsec;		/* ClockTimeAdjValueL */
+	uint32_t clk_time_adj_sec;		/* ClockTimeAdjValueH */
+	uint32_t clk_offset_adj_value;		/* ClockOffsetAdjValue */
+	uint32_t clk_offset_adj_interval;	/* ClockOffsetAdjInterval */
+	uint32_t clk_drift_adj_value;		/* ClockDriftAdjValue */
+	uint32_t clk_drift_adj_interval;	/* ClockDriftAdjInterval */
+	uint32_t clk_insync_threshold;		/* ClockInSyncThreshold */
+	uint32_t clk_servo_offset_Kp;		/* ClockServoOffsetFactorP */
+	uint32_t clk_servo_offset_Ki;		/* ClockServoOffsetFactorI */
+	uint32_t clk_servo_drift_Kp;		/* ClockServoDriftFactorP */
+	uint32_t clk_servo_drift_Ki;		/* ClockServoDriftFactorI */
+	uint32_t pps_slave_control;		/* PpsSlaveControl */
+	uint32_t pps_slave_cable_delay;		/* PpsSlaveCableDelay */
+	uint32_t tod_control;			/* TodSlaveControl */
+	uint32_t tod_uart_baud_rate;		/* TodSlaveUartBaudRate */
 };
 
 struct timecard_version {
@@ -127,7 +127,7 @@ struct timecard_version {
 	uint32_t axi_gpio;
 	uint32_t axi_iic;
 	uint32_t axi_uart;
-	uint32_t axi_hxicap;
+	uint32_t axi_hwicap;
 	uint32_t axi_qspi;
 };
 

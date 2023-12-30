@@ -662,7 +662,7 @@ struct timecard_version_str {
 	char axi_gpio[VERSION_STR_LEN];
 	char axi_iic[VERSION_STR_LEN];
 	char axi_uart[VERSION_STR_LEN];
-	char axi_hxicap[VERSION_STR_LEN];
+	char axi_hwicap[VERSION_STR_LEN];
 	char axi_qspi[VERSION_STR_LEN];
 };
 
@@ -1229,8 +1229,8 @@ timecard_add_sysctl(struct timecard_softc *sc)
 
 	TC_VER2STR(sc->sc_ver_str.axi_qspi, sc->sc_version.axi_qspi);
 	SYSCTL_ADD_STRING(ctx, parent, OID_AUTO, "axi_qspi", CTLFLAG_RD, sc->sc_ver_str.axi_qspi, 0, "axi_qspi");
-	TC_VER2STR(sc->sc_ver_str.axi_hxicap, sc->sc_version.axi_hxicap);
-	SYSCTL_ADD_STRING(ctx, parent, OID_AUTO, "axi_hxicap", CTLFLAG_RD, sc->sc_ver_str.axi_hxicap, 0, "axi_hxicap");
+	TC_VER2STR(sc->sc_ver_str.axi_hwicap, sc->sc_version.axi_hwicap);
+	SYSCTL_ADD_STRING(ctx, parent, OID_AUTO, "axi_hwicap", CTLFLAG_RD, sc->sc_ver_str.axi_hwicap, 0, "axi_hwicap");
 	TC_VER2STR(sc->sc_ver_str.axi_uart, sc->sc_version.axi_uart);
 	SYSCTL_ADD_STRING(ctx, parent, OID_AUTO, "axi_uart", CTLFLAG_RD, sc->sc_ver_str.axi_uart, 0, "axi_uart");
 	TC_VER2STR(sc->sc_ver_str.axi_iic, sc->sc_version.axi_iic);
@@ -1427,7 +1427,7 @@ timecard_init(struct timecard_softc *sc)
 			bus_write_4(mres, offs_start + 0x1C, 0); /* GIER */
 			break;
 		case TC_CORE_TYPE_AXI_HWICAP:
-			sc->sc_version.axi_hxicap = tcl->cl_version;
+			sc->sc_version.axi_hwicap = tcl->cl_version;
 			bus_write_4(mres, offs_start + 0x1C, 0); /* GIER */
 			break;
 		case TC_CORE_TYPE_AXI_QSPI:
