@@ -193,8 +193,10 @@ int main(int argc, char**argv) {
 	spsc->spidev = -1;
 	if (target == 0) {
 		int fd = open(dname, O_RDWR);
-		if (fd == -1)
+		if (fd == -1) {
+			printf("Could not open %s\n\n", dname);
 			usage(argv[0]);
+		}
 		spsc->spidev = fd;
 	}
 	if (fname) {
@@ -392,6 +394,8 @@ static int write_flash(struct mx25l_softc *sc, uint32_t fl_offset, int verify, c
 		}
 		if (err == 0)
 			printf(" %zu bytes OK in %lu.%01lus.\n", msize, tdiff.tv_sec, tdiff.tv_nsec);
+		else
+			printf("\nverify failed!\n");
 	}
 	free(fimg);
 	free(rimg);
