@@ -1,0 +1,75 @@
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2024 John Hay
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" Note: The date here should be updated whenever a non-trivial
+.\" change is made to the manual page.
+.Dd January 1, 2024
+.Dt AXI_IIC 4
+.Os
+.Sh NAME
+.Nm axi_iic
+.Nd "Xilinx AXI IIC controller driver"
+.Sh SYNOPSIS
+To load the driver and enable the rest of the timecard software at boot time,
+add the following in
+.Xr rc.conf 5 :
+.Bd -literal -offset indent
+timecard_enable="YES"
+.Ed
+.Pp
+To manually load the driver, use:
+.Bd -literal -offset indent
+kldload axi_iic iic
+.Ed
+.Sh DESCRIPTION
+The
+.Nm
+driver supports the Xilinx AXI IIC controller. It will attach a
+.Xr iicbus 4
+to which other devices such as the
+.Nm iic 4
+driver can attach.
+.Sh HARDWARE
+The
+.Nm
+driver supports the following hardware:
+.Pp
+.Bl -bullet -compact
+.It
+Xilinx AXI IIC as implememnted on the OCP TAP TimeCard
+.El
+.Sh SEE ALSO
+.Xr iic 4 ,
+.Xr iicbus 4 ,
+.Xr timecard 4 ,
+.Xr i2c 8 ,
+.Xr timecard 8
+.Sh HISTORY
+The
+.Nm
+device driver is part of the
+.Xr timecard 4
+suite.

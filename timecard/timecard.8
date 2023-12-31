@@ -1,0 +1,166 @@
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2024 John Hay
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" Note: The date here should be updated whenever a non-trivial
+.\" change is made to the manual page.
+.Dd January 1, 2024
+.Dt TIMECARD 8
+.Os
+.Sh NAME
+.Nm timecard
+.Nd "synchronise kernel time and provide ntpd(8) with time using an OCP TAP TimeCard"
+.Sh SYNOPSIS
+.Nm
+.Op Fl bc
+.Op Fl d Ar driftfile
+.Op Fl f Ar /dev/timecardN
+.Op Fl k
+.Op Fl l Ar logfile
+.Op Fl stv
+.Sh DESCRIPTION
+The
+.Nm
+does 3 main functions:
+.Bl -tag -offset "xxxx"
+.It Provide a shm(28) driver for ntpd.
+.It Synchronise the kernel time to the
+.Xr timecard 4
+time.
+.It Discipline or train the clock on board of the TimeCard through the
+.Xr iic 4
+Clock interface.
+.El
+By default all these options are turned on, but can be individually turned off.
+.Pp
+
+The options are as follows:
+.Bl -tag -width "-d /dev/timecardN"
+.It Fl b
+Disable BME monitoring, if it is compiled in.
+.It Fl c
+Disable TimeCard clock monitoring.
+.It Fl d Ar driftfile
+The file to periodically write drift values.
+It is used to speed up TimeCard clock synchronization.
+.It Fl f Ar /dev/timecardN
+Specifiy which
+.Pa /dev/timecard%d
+to use.
+If not specified,
+.Pa /dev/timecard0
+will be used.
+.It Fl k
+Disable kernel synchronisation.
+.It Fl l Ar logfile
+The logfile to use for per second logs. If not specified, none will be used.
+.It Fl s
+Disable ntp shm shared memory interface.
+.It Fl t
+Disable clock training (disciplining).
+.It Fl v
+Be more verbose.
+.El
+.Pp
+After initialization,
+.Nm
+will sit in a loop and once a second:
+.Bl -tag -offset "xxxx" -compact
+.It read the time and status from Xr timecard 4
+.It check the card is still in sync and other sanity checks
+.It update the ntp shm(28) interface
+.It update the kernel time using Xr ntp_adjtime 2
+.It read the Xr timecard 4 clock information
+.It write the logfile
+.It calculate Xr timecard 4 clock disciplining / training
+.It calculate Xr timecard 4 clock aging
+.It update Xr timecard 4 clock pull and aging daily once settled
+.It update the driftfile (hourly if it changed)
+.El
+.Pp
+The logfile, has the following format:
+.Pp
+TC sec.nsec OS sec.nsec ClockStatusOffset ClockStatusDrift
+ClockStatus TodSlaveStatus TodSlaveAntennaStatus TodSlaveUtcStatus PpsSlaveStatus State Valid
+K TC-OS NOffs TSC-diff CPU
+XO XOffs Xpwr IICuncorr IICerr
+TR TOffs Tsec Offs sec Xadj TC ST Xaging Xpull
+.Sh SIGNAL
+If
+.Nm
+receives a SIGHUP signal,
+it will close and reopen the logfile.
+.Sh FILES
+.Bl -tag -width "/dev/null" -compact
+.It Pa /dev/timecard%d
+.It Pa /dev/iic%d
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+The following is an example of a typical usage
+of the
+.Nm
+command:
+.Pp
+.Dl "timecard -d driftfile.txt -l tc.log"
+.Dl "daemon -f -c timecard -d driftfile.txt -l tc.log"
+.Sh DIAGNOSTICS
+The command may fail for one of the following reasons:
+.Bl -diag
+.It "example error message"
+An example of an error message.
+.It "another example error message."
+Self explanatory.
+.El
+.Sh SEE ALSO
+.Xr timecard 4 ,
+.Xr iic 4
+.Lk https://github.com/opencomputeproject/Time-Appliance-Project/tree/master/Time-Card
+.Sh HISTORY
+The
+.Nm
+manual page example first appeared in
+.Fx 2.2 .
+.Pp
+Some other common
+.Sx HISTORY
+section examples are:
+.Pp
+The
+.Nm
+manual page example first appeared in
+.Bx 4.4 .
+.Pp
+The
+.Nm
+manual page example first appeared in
+.At v6 .
+.Sh AUTHORS
+This
+manual page was written by
+.An Mike Pritchard Aq Mt mpp@FreeBSD.org .
+.Sh BUGS
+The actual code for this command is vaporware.

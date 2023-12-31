@@ -1,0 +1,158 @@
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2024 John Hay
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" Note: The date here should be updated whenever a non-trivial
+.\" change is made to the manual page.
+.Dd January 1, 2024
+.Dt TC-FW-FLASH 8
+.Os
+.Sh NAME
+.Nm tc-fw-flash
+.Nd "write files to flash"
+.Sh SYNOPSIS
+.Nm
+.Op Fl d Ar spi device
+.Op Fl f Ar image file
+.Op Fl i
+.Op Fl o Ar offset
+.Op Fl rvV
+.Nm
+.Op Fl p Ar card address
+.Op Fl f Ar image file
+.Op Fl i
+.Op Fl o Ar offset
+.Op Fl rvV
+.Sh DESCRIPTION
+.Nm
+is used to write, update, read and verify firmware images for the the OCP TAP TimeCard.
+.Pp
+The first synopsis form will use
+.Xr spigen 4
+to access the flash. If neither
+.Fl d
+nor
+.Fl p
+is specified,
+.Fl d
+.Pa /dev/spigen0.0
+is assumed.
+.Pp
+The second synopsis form will bypass drivers and
+.Xr mmap 2
+the PCIe TimeCARD and access the spi controller directly.
+It is useful when bringing up the card the first time and no drivers are loaded yet.
+.Pp
+The options are as follows:
+.Bl -tag -width "-p card address"
+.It Fl d Ar spi device
+The device to use to access the flash.
+.It Fl f Ar image file
+The file to be written to the flash.
+.It Fl i
+Identify the flash only. The program will terminate after that.
+.It Fl o Ar offset
+The offset in the flash where the image should be written.
+The value can be decimal or hexadecimal, with an 0x prefix.
+Normal values are 0 for a complete factory image,
+or 0x00400000 for updates.
+.It Fl p Ar card address
+The PCI bar address of the TimeCard.
+It can be determined using
+.Xr pciconf 8 ,
+finding the card and determining its bar address with the -b option.
+.It Fl r
+Read from the flash and write to the file specified with
+.Fl f .
+.It Fl v
+Increase verbosity.
+.It Fl V
+Verify after writing to the flash.
+.El
+.Sh FILES
+.Bl -tag -width "/dev/null" -compact
+.It Pa /dev/spigen0.0
+The default device if
+.Fl d
+is not specified.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+The following is an example of a typical usage
+of the
+.Nm
+command:
+.Pp
+.Dl "tc-fw-flash -f TimeCardOS.bin -o 0x400000 -V"
+.Sh DIAGNOSTICS
+The command may fail for one of the following reasons:
+.Bl -diag
+.It "Could not open %s"
+The device could not be opened.
+.It "Could not mmap"
+.Xr mmap 2
+failed for the card address specified with
+.Fl p .
+.It "flash image open failed"
+Could not
+.Xr open 2
+the flash image specified with
+.Fl f .
+.It "stat failed"
+Could not
+.Xr stat 2
+the flash image specified with
+.Fl f .
+.It "fimg calloc failed"
+.Xr calloc 3
+failed.
+.It "read wrong length"
+Could not read the expected length.
+.It "mx25l_write err %d"
+Experienced an error writing to the flash device.
+.It "mx25l_read err %d"
+Experienced an error reading from the flash device.
+.It "error offset %u, expected %02X, but %02X"
+.It "verify failed!"
+Verify failed. The bytes read back from the flash is different from what was written to it.
+.It "write file open failed"
+Could not
+.Xr open 2
+the file for writing.
+.It "writing to file"
+.Xr write 2
+gave an error.
+.El
+.Sh SEE ALSO
+.Xr timecard 4 ,
+.Xr spigen 4 ,
+.Xr axi_spi_timecard 4 ,
+.Xr pciconf 8
+.Sh HISTORY
+.Nm
+is part of the
+.Xr timecard 4
+suite.

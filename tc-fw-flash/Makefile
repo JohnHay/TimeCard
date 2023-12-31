@@ -1,11 +1,7 @@
 
 PROG=	tc-fw-flash
-#MAN=	tc-fw-flash.8
-MAN=
+MAN=	tc-fw-flash.8
 SRCS=	${PROG}.c
 DPADD+=	mx25l.c		# file is included
-
-BINDIR?=        /usr/local/sbin
-MANDIR?=	/usr/local/man
 
 .include <bsd.prog.mk>

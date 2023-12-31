@@ -2,6 +2,15 @@ sbin/timecard
 sbin/tc-fw-flash
 etc/rc.d/timecard
 etc/syslog.d/timecard.conf
+include/timecard.h
+include/timecard_bus.h
+include/timecard_reg.h
+man/man4/axi_iic.4.gz
+man/man4/axi_spi_timecard.4.gz
+man/man4/timecard.4.gz
+man/man4/uart_timecard.4.gz
+man/man8/tc-fw-flash.8.gz
+man/man8/timecard.8.gz
 /boot/modules/timecard.ko
 /boot/modules/axi_iic.ko
 /boot/modules/axi_spi_timecard.ko

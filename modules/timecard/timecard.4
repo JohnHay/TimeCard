@@ -1,0 +1,328 @@
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2024 John Hay
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" Note: The date here should be updated whenever a non-trivial
+.\" change is made to the manual page.
+.Dd January 1, 2024
+.Dt TIMECARD 4
+.Os
+.Sh NAME
+.Nm timecard
+.Nd "OCP TAP TimeCard FreeBSD driver"
+.Sh SYNOPSIS
+To load the driver and enable the rest of the timecard software at boot time,
+add the following in
+.Xr rc.conf 5 :
+.Bd -literal -offset indent
+timecard_enable="YES"
+.Ed
+.Pp
+.In timecard.h
+.In timecard_bus.h
+.In timecard_reg.h
+.Sh DESCRIPTION
+The
+.Nm
+driver provides support for the OCP TAP TimeCard and
+makes it possible for a user-level program to
+discipline kernel / OS time and
+provide accurate time to programs such as
+.Xr ntpd 8 .
+.Pp
+A
+.Xr timecounters 4 ,
+TimeCard, is implemented.
+.Pp
+The driver makes a timecard bus available to which
+.Xr uart 4 ,
+.Xr iicbus 4
+and
+.Xr spibus 4
+drivers can attach.
+The API for that is in
+.In timecard_bus.h .
+.Pp
+The
+.Nm
+driver supports the following ioctls through
+.Pa /dev/timecard?
+and they are defined in
+.In timecard.h :
+.Bl -tag -width "12"
+.It Dv TCIOCGETTIME
+Read time.
+It is readonly and will return
+.Va struct timecard_time .
+.Bd -literal
+struct timecard_time {
+    struct timespec card;   /* time read from card */
+    struct timespec kernel; /* kernel timestamp */
+    uint64_t tsc;           /* TSC timestamp */
+    u_int cpuid;            /* CPU ID on which it happened */
+};
+.Ed
+.Pp
+.It Dv TCIOCGETSTATUS
+Read the status registers.
+It is readonly and will return
+.Va struct timecard_status .
+.Bd -literal
+struct timecard_status {
+    uint32_t clk_status;	/* ClockStatus */
+    int32_t clk_offset;		/* ClockStatusOffset */
+    int32_t clk_drift;		/* ClockStatusDrift */
+    uint32_t tod_status		/* TodSlaveStatus */
+    uint32_t tod_utc_status;	/* TodSlaveUtcStatus */
+    uint32_t tod_gnss_status;	/* TodSlaveAntennaStatus */
+    uint32_t tod_sat_num;	/* TodSlaveSateliteNumber */
+    uint32_t pps_slave_status;	/* PpsSlaveStatus */
+};
+.Ed
+The values of
+.Va clk_offset
+and
+.Va clk_drift
+have been changed to two's compliment.
+.Pp
+These are status registers from the card. They are described in the
+.Va AdjustableClock ,
+.Va PpsSlave
+and
+.Va TodSlave
+pages at:
+.Lk https://github.com/opencomputeproject/Time-Appliance-Project/tree/master/Time-Card/FPGA/Open-Source
+.Pp
+.It Dv TCIOCGETVERSION
+Read the versions of the different cores.
+It is readonly and will return
+.Va struct timecard_version .
+.Bd -literal
+struct timecard_version {
+    uint32_t length;	/* unused */
+    uint32_t driver;
+    uint32_t fpga;
+    uint32_t core_list;
+    uint32_t adj_clock;
+    uint32_t sig_gen;
+    uint32_t sig_tstamper;
+    uint32_t pps_gen;
+    uint32_t freq_counter;
+    uint32_t clock_detector;
+    uint32_t sma_selector;
+    uint32_t pps_source_selector;
+    uint32_t pps_slave;
+    uint32_t tod_slave;
+    uint32_t axi_pcie;
+    uint32_t axi_gpio;
+    uint32_t axi_iic;
+    uint32_t axi_uart;
+    uint32_t axi_hwicap;
+    uint32_t axi_qspi;
+};
+.Ed
+Except for the driver, the version as reported in the CoreList will be used.
+Version numbers format is 0xMMmmBBBB, where MM is the Major version, mm is the Minor version and BBBB is the Built version.
+.Pp
+.It Dv TCIOCCONTROL
+Read or write the control registers.
+It is read-write and
+.Va struct timecard_control
+is passed.
+.Bd -literal
+struct timecard_control {
+    uint32_t read;
+    uint32_t write;
+    uint32_t clk_control;		/* ClockControl */
+    uint32_t clk_select;		/* ClockSelect */
+    uint32_t clk_time_adj_nsec;		/* ClockTimeAdjValueL */
+    uint32_t clk_time_adj_sec;		/* ClockTimeAdjValueH */
+    uint32_t clk_offset_adj_value;	/* ClockOffsetAdjValue */
+    uint32_t clk_offset_adj_interval;	/* ClockOffsetAdjInterval */
+    uint32_t clk_drift_adj_value;	/* ClockDriftAdjValue */
+    uint32_t clk_drift_adj_interval;	/* ClockDriftAdjInterval */
+    uint32_t clk_insync_threshold;	/* ClockInSyncThreshold */
+    uint32_t clk_servo_offset_Kp;	/* ClockServoOffsetFactorP */
+    uint32_t clk_servo_offset_Ki;	/* ClockServoOffsetFactorI */
+    uint32_t clk_servo_drift_Kp;	/* ClockServoDriftFactorP */
+    uint32_t clk_servo_drift_Ki;	/* ClockServoDriftFactorI */
+    uint32_t pps_slave_control;		/* PpsSlaveControl */
+    uint32_t pps_slave_cable_delay;	/* PpsSlaveCableDelay */
+    uint32_t tod_control;		/* TodSlaveControl */
+    uint32_t tod_uart_baud_rate;	/* TodSlaveUartBaudRate */
+};
+.Ed
+The read and write members define which registers should be read and written to. A bitwise OR of the following:
+.Bl -tag -width TC_PPS_SLAVE_CABLE_DELAY -compact -offset "1234"
+.It TC_CLK_CONTROL
+.It TC_CLK_SELECT
+.It TC_CLK_TIME_ADJ
+.It TC_CLK_OFFSET_ADJ
+.It TC_CLK_DRIFT_ADJ
+.It TC_CLK_INSYNC_THRESH
+.It TC_CLK_SERVO_ADJ
+.It TC_PPS_SLAVE_CONTROL
+.It TC_PPS_SLAVE_CABLE_DELAY
+.It TC_TOD_CONTROL
+.It TC_TOD_UART_BAUD_RATE
+.El
+The following are used to clear the sticky error bits in the registers when used in the write member:
+.Bl -tag -width TC_PPS_SLAVE_CABLE_DELAY -compact -offset "1234"
+.It TC_PPS_SLAVE_STATUS_CLR
+.It TC_TOD_STATUS_CLR
+.El
+.Pp
+All the write operations will be done before the read operations.
+.El
+.Sh HARDWARE
+The
+.Nm
+driver supports OCP TAP TimeCards with PCI vendor number 0x1d9b (Meta Platforms, Inc.) and device ID 0x0400.
+.Pp
+Both FPGA firmware streams are supported:
+.Bl -bullet -compact
+.It
+The SOM firmware from version 26 (0x1A)
+.It
+The Open Source firmware from version 9 (0x9)
+.El
+.Pp
+The above are available in two variants and both are supported:
+.Pp
+.Bl -bullet -compact
+.It
+using the Xilinx PCIe Ip
+.It
+using LitePCIe
+.El
+.Pp
+The Xilinx PCIe IP only supports MSI interrupts and the LitePCIe only supports MSI-X interrupts.
+.Sh LOADER TUNABLES
+The following loader tunables can be set to change the defaults of the driver:
+.Bl -tag -width "xxxx"
+.It Va hw.timecard.gnss1_baud: 115200
+.It Va hw.timecard.gnss1_proto: 1
+The baud rate and protocol must match the configuration of the GNSS receiver. Protocol options are, 0 - NMEA, 1 - UBX, 2 - TSIP.
+.It Va hw.timecard.iic_clock: 1
+The communication with the MAC/Clock can be 0 - UART or 1 - IIC and must match the capability of the MAC/Clock. 
+.It Va hw.timecard.timecounter_enable=1
+Set to 0 if the timecounter should not be initialized.
+.El
+.Pp
+.Sh SYSCTL VARIABLES
+Sysctls are under
+.Va dev.timecard.%d .
+The version numbers for all the cores, and various status bits extracted from the status registers are available.
+.Bl -tag -width "xxxx" -compact
+.It Va dev.timecard.%d.status.clk_in_sync
+.It Va dev.timecard.%d.status.clk_in_holdover
+.It Va dev.timecard.%d.status.clk_offset
+.It Va dev.timecard.%d.status.clk_drift
+.It Va dev.timecard.%d.status.tod_parse_error
+.It Va dev.timecard.%d.status.tod_checksum_error
+.It Va dev.timecard.%d.status.tod_uart_error
+.It Va dev.timecard.%d.status.tod_utc_offset
+.It Va dev.timecard.%d.status.tod_utc_valid
+.It Va dev.timecard.%d.status.tod_leap_announce
+.It Va dev.timecard.%d.status.tod_leap_59
+.It Va dev.timecard.%d.status.tod_leap_61
+.It Va dev.timecard.%d.status.tod_leap_valid
+.It Va dev.timecard.%d.status.gnss_fix_ok
+.It Va dev.timecard.%d.status.gnss_fix
+.It Va dev.timecard.%d.status.gnss_sat_num_seen
+.It Va dev.timecard.%d.status.gnss_sat_num_locked
+.It Va dev.timecard.%d.status.pps_slave_period_error
+.It Va dev.timecard.%d.status.pps_slave_pulse_width_error
+.It Va dev.timecard.%d.read_time_count
+.It Va dev.timecard.%d.get_time_X_count
+.It Va dev.timecard.%d.get_time_0_count
+.It Va dev.timecard.%d.pps_intr_count
+.It Va dev.timecard.%d.version.driver
+.It Va dev.timecard.%d.version.fpga
+.It Va dev.timecard.%d.version.core_list
+.It Va dev.timecard.%d.version.adj_clock
+.It Va dev.timecard.%d.version.sig_gen
+.It Va dev.timecard.%d.version.sig_tstamper
+.It Va dev.timecard.%d.version.pps_gen
+.It Va dev.timecard.%d.version.freq_counter
+.It Va dev.timecard.%d.version.clock_detector
+.It Va dev.timecard.%d.version.sma_selector
+.It Va dev.timecard.%d.version.pps_source_selector
+.It Va dev.timecard.%d.version.pps_slave
+.It Va dev.timecard.%d.version.tod_slave
+.It Va dev.timecard.%d.version.axi_pcie
+.It Va dev.timecard.%d.version.axi_gpio
+.It Va dev.timecard.%d.version.axi_iic
+.It Va dev.timecard.%d.version.axi_uart
+.It Va dev.timecard.%d.version.axi_hxicap
+.It Va dev.timecard.%d.version.axi_qspi
+.El
+
+.Sh FILES
+.Bl -tag -width "/dev/timecard?" -compact
+.It Pa /dev/timecard?
+.El
+.Sh DIAGNOSTICS
+.Bl -diag
+.It "example%d: example diagnostic message."
+An example of a diagnostic message.
+.It "example%d: another example diagnostic message."
+Self explanatory.
+.El
+.Sh SEE ALSO
+.Xr timecard 8
+.Xr axi_iic 4
+.Xr axi_spi_timecard 4
+.Xr iic 4
+.Xr iicbus 4
+.Xr spibus 4
+.Xr spigen 4
+.Xr timecounters 4
+.Xr uart 4
+.Xr uart_timecard 4
+timecard url
+.Lk https://github.com/opencomputeproject/Time-Appliance-Project/tree/master/Time-Card
+.Lk https://opencomputeproject.github.io/Time-Appliance-Project/docs/category/timecard
+.Sh HISTORY
+The
+.Nm
+device driver first appeared in
+.Fx 14.0 .
+.Pp
+.Sh AUTHORS
+This manual page and driver was written by
+.An John Hay Aq Mt jhay@FreeBSD.org .
+.Sh BUGS
+Versions before
+.Fx 14.0
+had an alignment bug when allocating 32 MSI interrupts that caused a kernel panic.
+.Pp
+Some older FPGA firmware versions have interrupt and CoreList bugs.
+.Pp
+If the timecounter is enabled, the
+.Nm
+module cannot be unloaded.
+.Xr Timecounters 4
+cannot be unloaded or unconfigured.
