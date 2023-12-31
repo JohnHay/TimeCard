@@ -404,7 +404,7 @@ void usage(void) {
 	printf("timecardd [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n");
 #endif
 	printf("\t-c: disable clock monitoring\n");
-	printf("\t-d driftfile: file to preiodically write the drift values, used to spead startup\n");
+	printf("\t-d driftfile: file to periodically write the drift values, used to spead startup\n");
 	printf("\t-f timecard device: default /dev/timecard0\n");
 	printf("\t-k: disable kernel synchronisation\n");
 	printf("\t-l logfile: file to write logs, HUP will close and reopen it\n");
