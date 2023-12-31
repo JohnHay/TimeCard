@@ -1929,6 +1929,8 @@ static void driftfupdate(struct timeCardInfo *tci)
 		return;
 	tci->nextdriftf += (60 * 60);
 
+	if ((tci->dfaging == tci->aging) && (tci->dfoffset == tci->xo_offset))
+		return;
 	tci->dfaging = tci->aging;
 	tci->dfoffset = tci->xo_offset;
 
