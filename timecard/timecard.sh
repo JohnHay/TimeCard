@@ -1,8 +1,8 @@
 #!/bin/sh
 
 # PROVIDE: timecard
-# REQUIRE: DAEMON
-# BEFORE: ntpd
+# REQUIRE: FILESYSTEMS
+# BEFORE: NETWORKING ntpd
 # KEYWORD:
 
 #
@@ -14,14 +14,31 @@
 #				See timecard(8) for details.
 # timecard_logfile (str):
 # timecard_driftfile (str):
+# timecard_hints (str):		See timecard_default_hints below.
+# timecard_modules (str):	See timecard_default_modules below.
+# timecard_sync_wait (num):	Seconds to wait for card to sync.
+#				Default is 30 seconds.
 
 . /etc/rc.subr
 
 name="timecard"
 desc="Synchronize kernel time to the TimeCard and provide shm(28) driver for ntpd"
 rcvar="timecard_enable"
-required_modules="axi_iic:timecard/axi_iic iic:iicbus/iic axi_spi_timecard:timecard/spi uart_timecard:timecard/uart timecard:pci/timecard"
-# ? spigen.ko needs hints
+
+timecard_default_modules="
+	axi_iic:timecard/axi_iic
+	iic:iicbus/iic
+	axi_spi_timecard:timecard/spi
+	spigen:spibus/spigen
+	uart_timecard:timecard/uart
+	timecard:pci/timecard
+"
+timecard_default_hints="
+	hint.spigen.0.at=spibus0
+	hint.spigen.0.clock=1000000
+	hint.spigen.0.cs=0
+	hint.spigen.0.mode=0
+"
 
 pidfile="/var/run/${name}.pid"
 procname="/usr/local/sbin/${name}"
@@ -29,10 +46,20 @@ command=/usr/sbin/daemon
 command_args="-f -c -T timecard -p ${pidfile} ${procname}"
 
 start_cmd="timecard_start"
+start_precmd="timecard_prestart"
+
+load_rc_config $name
+
+# Set defaults
+: ${timecard_enable:="NO"}
+: ${timecard_hints:=${timecard_default_hints}}
+: ${timecard_sync_wait:=30}
+: ${required_modules:=${timecard_modules}}
+: ${required_modules:=${timecard_default_modules}}
 
 timecard_wait()
 {
-	local to=30
+	local to=${timecard_sync_wait}
 	local insync
 	local utcvalid
 	local fixok
@@ -49,6 +76,14 @@ timecard_wait()
 	done
 }
 
+timecard_prestart()
+{
+	local _h
+	for _h in ${timecard_hints}; do
+		kenv -q ${h}
+	done
+}
+
 timecard_start()
 {
 	if [ -n "${timecard_driftfile}" ]; then
@@ -58,13 +93,10 @@ timecard_start()
 	if [ -n "${timecard_logfile}" ]; then
 		timecard_flags="${timecard_flags} -l ${timecard_logfile}"
 	fi
-	#echo "flags $command_args $timecard_flags"
 	timecard_wait
-	# XXX Is the best place? More checks (GNSS synced, etc. ) before done?
 	/sbin/sysctl kern.timecounter.hardware="TimeCard"
 	$command $command_args $timecard_flags
 }
 
-load_rc_config $name
 run_rc_command "$1"
 
