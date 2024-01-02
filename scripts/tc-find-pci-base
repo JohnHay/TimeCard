@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Find and echo a TimeCard's base address. For use with tools that
+# directly memory map and access the card without using a device driver.
+#
+
+pciconf -lb | grep -A1 vendor=0x1d9b | \
+    awk -F '[[:blank:]/,]*' '/base/ {print $10}'

@@ -1,0 +1,166 @@
+#!/bin/sh
+
+# TimeCard FPGA firmware requirements
+# Required Messages
+#
+#   NAV_TIME_UTC
+#     CFG-MSGOUT-UBX_NAV_TIMEUTC_UART1
+#   NAV_TIME_LS
+#     CFG-MSGOUT-UBX_NAV_TIMELS_UART1
+#
+# Optional Messages (for additional status information)
+#
+#   NAV_STATUS
+#   MON_HW
+#   NAV_SAT
+#
+# Making the Time Pulse more stable when loosing signal
+#   CFG-NAVSPG-UTCSTANDARD,3	# USNO
+#   CFG-NAVSPG-DYNMODEL,2	# Stationary
+#   CFG-TP-TIMEGRID_TP1,1	# Use GPS time as reference for pulse
+#   CFG-SIGNAL*			# Should all the non-GPS signals be disabled for a stable TP?
+#
+#
+# Request UBX-NAV-TIMEGPS       # GPS week
+# ubxtool -p NAV-TIMEGPS
+#    UBX-NAV-TIMEGPS:
+#      iTOW 306825000 fTOW 373645 week 2294 leapS 18 valid x7 tAcc 14
+#
+# update yearly
+# CFG-NAVSPG-WKNROLLOVER
+
+PROGNAME=$0
+dev=""
+baud="115200"
+conf=0
+week=0
+ubxproto="-P 32.01"
+ubxtool=`which ubxtool`
+
+NMEADISRAM="
+	-z CFG-MSGOUT-NMEA_ID_RMC_UART1,0,0	\
+	-z CFG-MSGOUT-NMEA_ID_VTG_UART1,0,0	\
+	-z CFG-MSGOUT-NMEA_ID_GGA_UART1,0,0	\
+	-z CFG-MSGOUT-NMEA_ID_GSA_UART1,0,0	\
+	-z CFG-MSGOUT-NMEA_ID_GSV_UART1,0,0	\
+	-z CFG-MSGOUT-NMEA_ID_GLL_UART1,0,0	\
+"
+
+NMEADISABLE="	\
+	-z CFG-MSGOUT-NMEA_ID_RMC_UART1,0	\
+	-z CFG-MSGOUT-NMEA_ID_VTG_UART1,0	\
+	-z CFG-MSGOUT-NMEA_ID_GGA_UART1,0	\
+	-z CFG-MSGOUT-NMEA_ID_GSA_UART1,0	\
+	-z CFG-MSGOUT-NMEA_ID_GSV_UART1,0	\
+	-z CFG-MSGOUT-NMEA_ID_GLL_UART1,0	\
+"
+
+UBXNAVENABLE="	\
+	-z CFG-MSGOUT-UBX_NAV_TIMEUTC_UART1,1	\
+	-z CFG-MSGOUT-UBX_NAV_TIMELS_UART1,1	\
+	-z CFG-MSGOUT-UBX_NAV_STATUS_UART1,1	\
+	-z CFG-MSGOUT-UBX_NAV_SAT_UART1,1	\
+	-z CFG-MSGOUT-UBX_MON_HW_UART1,1	\
+"
+
+# Stationary mode
+# USNO as pulse base
+# Use GPS time as reference for pulse
+UBXTIMESTABLE="	\
+	-z CFG-NAVSPG-DYNMODEL,2		\
+	-z CFG-NAVSPG-UTCSTANDARD,3		\
+	z CFG-TP-TIMEGRID_TP1,1			\
+"
+
+configure()
+{
+	ubxtool -w 4 ${NMEADISABLE} ${UBXNAVENABLE} ${UBXTIMESTABLE}
+	#ubxtool -w 4 ${NMEADISABLE}
+	#ubxtool -w 4 ${UBXNAVENABLE}
+	#ubxtool -w 4 ${UBXTIMESTABLE}
+
+	ubxtool -w 1 -z CFG-UART1-BAUDRATE,115200
+}
+
+weekroll()
+{
+	local ln
+	ln=`ubxtool -g CFG-NAVSPG-WKNROLLOVER,0 | grep CFG-NAVSPG-WKNROLLOVER`
+	local oldval=${ln#*val }
+	ln=`ubxtool -p NAV-TIMEGPS | grep -A1 UBX-NAV-TIMEGPS: | grep week`
+	local weekval=${ln#*week }
+	weekval=${weekval%% *}
+	echo "old rollover week ${oldval} current GPS week ${weekval}"
+	if [ ${oldval} -eq ${weekval} ]; then
+		echo "WKNROLLOVER already up to date"
+		return
+	fi
+	ubxtool -z CFG-NAVSPG-WKNROLLOVER,${weekval} | grep -A1 UBX-ACK-ACK:
+}
+
+usage()
+{
+	echo "usage ${PROGNAME} [-b <baud-rate>] [-c] [-d <uart-device>] [-h] [-w] [ubxtool commands]" >&2
+	echo "   -b baud-rate: default is 115200" >&2
+	echo "   -c : configure GNSS receiver for TimeCard use" >&2
+	echo "   -d uart-device: if not specified will try to find it" >&2
+	echo "   -h : this help" >&2
+	echo "   -w : update the GPS rollover week" >&2
+	echo "   A new NEO M9N default to 38400 baud" >&2
+	exit 1
+}
+
+while [ $# -gt 0 ]; do
+	cmd=$1
+	shift
+	case ${cmd} in
+	-b)
+		baud=$1
+		cmd=""
+		shift
+		;;
+	-c)
+		conf=1
+		cmd=""
+		;;
+	-d)
+		dev=$1
+		shift
+		cmd=""
+		;;
+	-w)
+		week=1
+		cmd=""
+		;;
+	*)
+		#usage
+		break
+		;;
+	esac
+done
+if [ -z "${dev}" ]; then
+	devi=`sysctl dev.uart | awk -F '.' '/AXI UART GNSS 1/ { print $3}'`
+	dev="/dev/cuau${devi}"
+fi
+if [ -z "${ubxtool}" ]; then
+	echo "Could not find ubxtool" >&2
+	exit 1
+fi
+if [ \! -c ${dev} ]; then
+	echo "device ${dev} is not a device" >&2
+	exit 1
+fi
+
+export UBXOPTS="${ubxproto} -s ${baud} -f ${dev}"
+
+if [ ${conf} -eq 1 ]; then
+	configure
+fi
+
+if [ ${week} -eq 1 ]; then
+	weekroll
+fi
+
+if [ -n "${cmd}" ]; then
+	ubxtool ${cmd} $*
+fi
