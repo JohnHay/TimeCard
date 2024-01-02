@@ -1,0 +1,102 @@
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2024 John Hay
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" Note: The date here should be updated whenever a non-trivial
+.\" change is made to the manual page.
+.Dd January 1, 2024
+.Dt TC-ADJ-SERVO 1
+.Os
+.Sh NAME
+.Nm tc-adj-servo
+.Nd "read or adjust TimeCard servo constants"
+.Sh SYNOPSIS
+.Nm
+.Op Fl d
+.Op Fl p Ar Kp
+.Op Fl i Ar Ki
+.Op Fl o
+.Op Fl p Ar Kp
+.Op Fl i Ar Ki
+.Sh DESCRIPTION
+.Nm
+is used to read or adjust the
+.xr timecard 4
+servo PI constants or factors. There are separate servos for the offset and the drift. Without arguments
+.Nm
+will read and display the current values.
+.Pp
+The options are as follows:
+.Bl -tag -width "-d Kp"
+.It Fl d
+The next
+.Fl p
+and
+.Fl i
+arguments will be for the drift servo.
+.It Fl o
+The next
+.Fl p
+and
+.Fl i
+arguments will be for the offset servo.
+.It Fl p Ar Kp
+The servo constant for P.
+.It Fl i Ar Ki
+The servo constant for I.
+.El
+.Pp
+The constants are a 32 bit number
+and can be specified in decimal or hexadecimal if prefixed with 0x.
+The number is calculated with this formula:
+.Dl (Multiplier * 2^16) / Divider
+.El
+.Sh FILES
+.Bl -tag -width "/dev/timecard0" -compact
+.It Pa /dev/timecard0
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+The following are examples of typical usage of the
+.Nm
+command:
+.Pp
+.Dl "tc-adj-servo"
+.Dl "tc-adj-servo -o -p 0x2000 -i 0x1000 -d -p 0x2000 -i 0x800"
+.Sh DIAGNOSTICS
+The command may fail for one of the following reasons:
+.Bl -diag
+.It "open /dev/timecard0 failed: Permission denied"
+Self explanatory.
+.El
+.Sh SEE ALSO
+.Xr timecard 4 ,
+.Xr timecard 8
+.Sh HISTORY
+.Nm
+is part of the
+.Xr timecard 4
+suite.

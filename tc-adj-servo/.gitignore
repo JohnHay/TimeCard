@@ -1,0 +1,9 @@
+tc-adj-servo
+.depend*
+*.8.gz
+*.c-*
+*.debug
+*.full
+*.h-*
+*.o
+*.out
