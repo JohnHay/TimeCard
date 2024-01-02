@@ -1,5 +1,6 @@
 tc-fw-flash
 .depend*
+*.8.gz
 *.c-*
 *.debug
 *.full

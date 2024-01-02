@@ -1,5 +1,6 @@
 timecard
 .depend*
+*.8.gz
 *.c-*
 *.debug
 *.full
