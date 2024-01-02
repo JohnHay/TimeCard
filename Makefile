@@ -5,6 +5,7 @@ STAGEDIR=	${WORKDIR}/staging
 
 SUBDIR=	\
 	modules \
+	tc-adj-servo \
 	tc-fw-flash \
 	timecard
 
