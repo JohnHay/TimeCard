@@ -556,6 +556,7 @@ struct timecard_softc {
 	int		 sc_irid;
 	struct resource	*sc_ires;
 	void		*sc_ihandle;
+	struct mtx	sc_dev_mtx;
 
 	int		sc_nports;
 	struct timecard_corelist *sc_cl;
@@ -1023,9 +1024,10 @@ timecard_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 {
 	struct timecard_softc *sc;
 
-	/* Look up our softc. */
 	sc = dev->si_drv1;
-	device_printf(sc->sc_dev, "Opened successfully.\n");
+	mtx_lock(&sc->sc_dev_mtx);
+	device_busy(sc->sc_dev);
+	mtx_unlock(&sc->sc_dev_mtx);
 	return (0);
 }
 
@@ -1034,8 +1036,10 @@ timecard_close(struct cdev *dev, int fflag, int devtype, struct thread *td)
 {
 	struct timecard_softc *sc;
 
-	/* Look up our softc. */
 	sc = dev->si_drv1;
+	mtx_lock(&sc->sc_dev_mtx);
+	device_unbusy(sc->sc_dev);
+	mtx_unlock(&sc->sc_dev_mtx);
 	device_printf(sc->sc_dev, "Closed.\n");
 	return (0);
 }
@@ -1644,6 +1648,7 @@ timecard_attach(device_t dev)
 		error = device_probe_and_attach(port->p_dev);
 	}
 
+	mtx_init(&sc->sc_dev_mtx, "TC Device", NULL, MTX_SPIN);
 	sc->sc_cdev = make_dev(&timecard_cdevsw, device_get_unit(dev),
 	    UID_ROOT, 123, 0660, "timecard%u", device_get_unit(dev));
 	sc->sc_cdev->si_drv1 = sc;
@@ -1659,6 +1664,10 @@ timecard_attach(device_t dev)
 	if (timecard_tc_enable) {
 		sc->sc_tc.tc_priv = sc;
 		tc_init(&sc->sc_tc);
+		/* make it look like we are busy if timecounter is loaded. */
+		mtx_lock(&sc->sc_dev_mtx);
+		device_busy(sc->sc_dev);
+		mtx_unlock(&sc->sc_dev_mtx);
 	}
 
 	return (0);
@@ -1724,14 +1733,16 @@ timecard_detach(device_t dev)
 	rman_fini(&sc->sc_iomem);
 	free(__DECONST(void *, sc->sc_iomem.rm_descr), M_TIMECARD);
 
-	if (mtx_initialized(&sc->sc_clk_cntrl_mtx))
-		mtx_destroy(&sc->sc_clk_cntrl_mtx);
-	if (mtx_initialized(&sc->sc_pps_mtx))
-		mtx_destroy(&sc->sc_pps_mtx);
 	if (sc->sc_cdev != NULL) {
 		destroy_dev(sc->sc_cdev);
 		sc->sc_cdev = NULL;
 	}
+	if (mtx_initialized(&sc->sc_clk_cntrl_mtx))
+		mtx_destroy(&sc->sc_clk_cntrl_mtx);
+	if (mtx_initialized(&sc->sc_pps_mtx))
+		mtx_destroy(&sc->sc_pps_mtx);
+	if (mtx_initialized(&sc->sc_dev_mtx))
+		mtx_destroy(&sc->sc_dev_mtx);
 	printf("TimeCard detach!\n");
 	return (0);
 }
