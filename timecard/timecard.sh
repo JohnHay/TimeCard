@@ -80,7 +80,7 @@ timecard_prestart()
 {
 	local _h
 	for _h in ${timecard_hints}; do
-		kenv -q ${h}
+		kenv -q ${_h}
 	done
 }
 
