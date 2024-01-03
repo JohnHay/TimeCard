@@ -15,6 +15,7 @@ CONGLOGMODE=	644
 RCD=		timecard.sh
 RCDNAME=	timecard
 RCDDIR=		/usr/local/etc/rc.d
+RCDMODE=	555
 
 .if USE_BME
 SRCS+=	BME280_driver-master/bme280.c
