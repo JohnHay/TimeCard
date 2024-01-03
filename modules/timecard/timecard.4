@@ -67,6 +67,18 @@ The API for that is in
 .Pp
 The
 .Nm
+driver supports the RFC 2783 Pulse Per Second API. See
+.In sys/timepps.h .
+To use it with
+.Xr ntpd 8
+a symbolic link to
+.Pa /dev/pps%d
+from
+.Pa /dev/timecard%d
+needs to be made.
+.Pp
+The
+.Nm
 driver supports the following ioctls through
 .Pa /dev/timecard?
 and they are defined in
@@ -234,6 +246,13 @@ Set to 0 if the timecounter should not be initialized.
 .Sh SYSCTL VARIABLES
 Sysctls are under
 .Va dev.timecard.%d .
+The following are changeable:
+.Bl -tag -width "xxxx" -compact
+.It Va dev.timecard.%d.sc_pps_remove_jitter
+It defaults to 1, but can be changed to 0,
+if removal of the interrupt delay and jitter should not be removed.
+.El
+.Pp
 The version numbers for all the cores, and various status bits extracted from the status registers are available.
 .Bl -tag -width "xxxx" -compact
 .It Va dev.timecard.%d.status.clk_in_sync
@@ -286,9 +305,14 @@ The version numbers for all the cores, and various status bits extracted from th
 .El
 .Sh DIAGNOSTICS
 .Bl -diag
-.It "example%d: example diagnostic message."
-An example of a diagnostic message.
-.It "example%d: another example diagnostic message."
+.It "timecard%d: init failed"
+The
+.Nm
+.Fn timecard_init
+failed.
+.It "timecard%d: failed to initialize msi interrupts"
+Self explanatory.
+.It "timecard%d: Failed to allocate irq"
 Self explanatory.
 .El
 .Sh SEE ALSO
@@ -302,7 +326,8 @@ Self explanatory.
 .Xr timecounters 4
 .Xr uart 4
 .Xr uart_timecard 4
-timecard url
+.Pp
+The TimeCard is part of the Time Appliances Project (TAP) under the Open Compute Project (OCP)
 .Lk https://github.com/opencomputeproject/Time-Appliance-Project/tree/master/Time-Card
 .Lk https://opencomputeproject.github.io/Time-Appliance-Project/docs/category/timecard
 .Sh HISTORY
