@@ -1,8 +1,8 @@
 #!/bin/sh
 
 # PROVIDE: timecard
-# REQUIRE: FILESYSTEMS
-# BEFORE: NETWORKING ntpd
+# REQUIRE: syslogd
+# BEFORE: SERVERS ntpd
 # KEYWORD:
 
 #
