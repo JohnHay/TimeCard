@@ -582,6 +582,8 @@ struct timecard_softc {
 	struct timecard_status_bits sc_st_bits;
 
 	volatile int	sc_ts_count;
+	uint32_t	sc_prev_nsec;
+	uint32_t	sc_prev_sec;
 	struct timespec	sc_ts_tmp;
 	struct timecounter sc_tc;
 	uint64_t	sc_tsc_tmp;
@@ -789,7 +791,11 @@ timecard_read_time_locked(struct timecard_softc *sc, struct timespec *ts, uint64
 	if (tsc)
 		*tsc = rdtsc();
 	ts->tv_nsec = bus_read_4(mres, sc->sc_clk_offset + TC_CLK_TIMEVALUEL_REG);
-	ts->tv_sec = bus_read_4(mres, sc->sc_clk_offset + TC_CLK_TIMEVALUEH_REG);
+	if ((sc->sc_prev_sec == 0) || (ts->tv_nsec < sc->sc_prev_nsec))
+		sc->sc_prev_sec = bus_read_4(mres, sc->sc_clk_offset + TC_CLK_TIMEVALUEH_REG);
+	ts->tv_sec = sc->sc_prev_sec;
+	sc->sc_prev_nsec = ts->tv_nsec;
+
 	sc->sc_read_time_count++;
 
 	if (wloop == 0)
@@ -1431,7 +1437,6 @@ static int
 timecard_pps_ifltr(void *arg)
 {
 	struct timecard_softc *sc;
-	struct resource *mres;
 
 	sc = (struct timecard_softc *)arg;
 	pps_capture(&sc->sc_pps_state);
