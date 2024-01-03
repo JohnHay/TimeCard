@@ -1445,9 +1445,8 @@ static int logstats(struct timeCardInfo *tci)
 	    tci->tod_status, tci->tod_gnss_status, tci->tod_utc_status);
 	fprintf(tci->logf, " 0x%X %d %d", tci->pps_slave_status,
 	    tci->status.state, tci->status.time_valid);
-	if (tci->enable_kernel)
-		fprintf(tci->logf, " K % 2jd % 2ld %ju %d", tci->kernel_offset,
-		    tci->ntpa_offset, tci->difftsc, tci->cpuid);
+	fprintf(tci->logf, " K % 2jd % 2ld %ju %d", tci->kernel_offset,
+	    tci->ntpa_offset, tci->difftsc, tci->cpuid);
 	if (tci->enable_clock)
 		fprintf(tci->logf, " XO %.5e %.4f %u %u",
 		    tci->xo_offset, tci->xo_power,
