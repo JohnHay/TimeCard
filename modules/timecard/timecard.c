@@ -44,6 +44,7 @@
 #include <sys/bus.h>
 #include <sys/sbuf.h>
 #include <sys/sysctl.h>
+#include <sys/timepps.h>
 #include <sys/timetc.h>
 
 #include <machine/bus.h>
@@ -590,6 +591,9 @@ struct timecard_softc {
 	int		sc_get_time_0_count;
 	int		sc_get_time_X_count;
 	int		sc_read_time_count;
+
+	struct pps_state sc_pps_state;
+	struct mtx	sc_pps_mtx;
 };
 
 SYSCTL_DECL(_hw_timecard);
@@ -1031,7 +1035,7 @@ timecard_close(struct cdev *dev, int fflag, int devtype, struct thread *td)
 int
 timecard_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread *td)
 {
-	int loop, ts_cnt_pre, ts_cnt_post;
+	int err = 0, loop, ts_cnt_pre, ts_cnt_post;
 	struct timecard_control *tc;
 	struct timecard_softc *sc;
 	struct timecard_time *get_time;
@@ -1085,9 +1089,11 @@ timecard_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thr
 		timecard_ioctl_control(sc, tc);
 		break;
 	default:
-		return (ENOIOCTL);
+		mtx_lock(&sc->sc_pps_mtx);
+		err = pps_ioctl(cmd, data, &sc->sc_pps_state);
+		mtx_unlock(&sc->sc_pps_mtx);
 	}
-	return (0);
+	return (err);
 }
 
 #define TC_VER2STR(_str, _ver)	\
@@ -1421,30 +1427,34 @@ timecard_init(struct timecard_softc *sc)
 	return 0;
 }
 
+static int
+timecard_pps_ifltr(void *arg)
+{
+	struct timecard_softc *sc;
+	struct resource *mres;
+
+	sc = (struct timecard_softc *)arg;
+	pps_capture(&sc->sc_pps_state);
+	return (FILTER_SCHEDULE_THREAD);
+}
 
 static void
 timecard_pps_intr(void *arg)
 {
-	int error;
 	struct timecard_softc *sc;
 	struct resource *mres;
-	struct timespec tstmp;
-	uint64_t tscstmp;
 
 	sc = (struct timecard_softc *)arg;
 	mres = sc->sc_bar->b_res;
-	error = timecard_read_time(sc, &tstmp, &tscstmp);
+
 	timecard_get_status(sc, &sc->sc_st);
 	timecard_update_status_bits(sc);
 
+	mtx_lock(&sc->sc_pps_mtx);
+	pps_event(&sc->sc_pps_state, PPS_CAPTUREASSERT);
+	mtx_unlock(&sc->sc_pps_mtx);
+
 	sc->sc_pps_intr_count++;
-	if (sc->sc_pps_intr_count < 1) {
-		printf("TI: %u.%09u, cpu %u, tsc %ju, err %d, tstmp %lu.%09lu, %ju\n",
-		    bus_read_4(mres, sc->sc_fpga_pps_offset + TC_TSTMPR_TIMEH_REG),
-		    bus_read_4(mres, sc->sc_fpga_pps_offset + TC_TSTMPR_TIMEL_REG),
-		    curcpu, rdtsc(),
-		    error, tstmp.tv_sec, tstmp.tv_nsec, tscstmp);
-	}
 	bus_write_4(mres, sc->sc_fpga_pps_offset + TC_TSTMPR_IRQ_REG, 1);
 
 	return;
@@ -1532,6 +1542,13 @@ timecard_attach(device_t dev)
 	if (error)
 		device_printf(dev, "pci_enable_busmaster failed %d\n", error);
 
+	/* PPSAPI */
+	mtx_init(&sc->sc_pps_mtx, "TC PPS", NULL, MTX_DEF);
+	sc->sc_pps_state.ppscap = PPS_CAPTUREASSERT;
+	sc->sc_pps_state.driver_abi = PPS_ABI_VERSION;
+	sc->sc_pps_state.driver_mtx = &sc->sc_pps_mtx;
+	pps_init_abi(&sc->sc_pps_state);
+
 	mtx_init(&sc->sc_clk_cntrl_mtx, "TC CLK Cntrl", NULL, MTX_SPIN);
 
 	sc->sc_irid = sc->sc_fpga_pps_port->p_intr_num + sc->sc_msi_vector_offset;
@@ -1540,8 +1557,8 @@ timecard_attach(device_t dev)
 		device_printf(dev, "Failed to allocate irq\n");
 		goto fail;
 	}
-	if (bus_setup_intr(dev, sc->sc_ires, INTR_TYPE_MISC | INTR_MPSAFE,
-	    NULL, timecard_pps_intr, sc, &sc->sc_ihandle)) {
+	if (bus_setup_intr(dev, sc->sc_ires, INTR_TYPE_CLK | INTR_MPSAFE,
+	    timecard_pps_ifltr, timecard_pps_intr, sc, &sc->sc_ihandle)) {
 		device_printf(dev, "Can't set up interrupt\n");
 		bus_release_resource(dev, SYS_RES_IRQ, sc->sc_irid, sc->sc_ires);
 		goto fail;
@@ -1689,6 +1706,8 @@ timecard_detach(device_t dev)
 
 	if (mtx_initialized(&sc->sc_clk_cntrl_mtx))
 		mtx_destroy(&sc->sc_clk_cntrl_mtx);
+	if (mtx_initialized(&sc->sc_pps_mtx))
+		mtx_destroy(&sc->sc_pps_mtx);
 	if (sc->sc_cdev != NULL) {
 		destroy_dev(sc->sc_cdev);
 		sc->sc_cdev = NULL;
