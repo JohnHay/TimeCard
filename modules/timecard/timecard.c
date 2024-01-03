@@ -590,6 +590,8 @@ struct timecard_softc {
 	u_int		sc_cpuid_tmp;
 
 	int		sc_pps_intr_count;
+	uint32_t	sc_pps_jitter;
+	int		sc_pps_remove_jitter;
 	int		sc_get_time_0_count;
 	int		sc_get_time_X_count;
 	int		sc_read_time_count;
@@ -1161,6 +1163,12 @@ timecard_add_sysctl(struct timecard_softc *sc)
 	SYSCTL_ADD_INT(ctx, child, OID_AUTO, "pps_intr_count", CTLFLAG_RD,
 	    &sc->sc_pps_intr_count, 0, "Number of timecard PPS interrupts");
 
+	SYSCTL_ADD_U32(ctx, child, OID_AUTO, "sc_pps_jitter", CTLFLAG_RD,
+	    &sc->sc_pps_jitter, 0, "PPS interrupt jitter");
+
+	SYSCTL_ADD_INT(ctx, child, OID_AUTO, "sc_pps_remove_jitter", CTLFLAG_RW,
+	    &sc->sc_pps_remove_jitter, 0, "Remove PPS interrupt jitter");
+
 	SYSCTL_ADD_INT(ctx, child, OID_AUTO, "get_time_0_count", CTLFLAG_RD,
 	    &sc->sc_get_time_0_count, 0, "Number of timecard get_time loop 0");
 
@@ -1429,6 +1437,8 @@ timecard_init(struct timecard_softc *sc)
 	else
 		bus_write_4(mres, sc->sc_gpio_ext_offset + AXI_GPIO_X_GPIO2_REG, 0x00000000);
 
+	sc->sc_pps_remove_jitter = 1;
+
 	timecard_add_sysctl(sc);
 	return 0;
 }
@@ -1440,6 +1450,11 @@ timecard_pps_ifltr(void *arg)
 
 	sc = (struct timecard_softc *)arg;
 	pps_capture(&sc->sc_pps_state);
+	if (sc->sc_pps_remove_jitter && sc->sc_st_bits.clk_in_sync &&
+	    timecounter == &sc->sc_tc) {
+		sc->sc_pps_jitter = sc->sc_prev_nsec;
+		sc->sc_pps_state.capcount = sc->sc_prev_sec * 1000000000L;
+	}
 	return (FILTER_SCHEDULE_THREAD);
 }
 
