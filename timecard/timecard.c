@@ -303,6 +303,11 @@ struct timeCardInfo {
 	int32_t drift_total_count;
 	int32_t drift;
 	int32_t drift_count;
+	int32_t offset_total;
+	int32_t offset_total_count;
+	int32_t offset;
+	int32_t offset_count;
+	int32_t train_use_offs;
 	int32_t train_count_max;
 	int32_t train_count;
 	int32_t train_step_max;
@@ -429,6 +434,8 @@ int main(int argc, char **argv)
 	tcInfo.enable_kernel = 1;
 	tcInfo.enable_shm = 1;
 	tcInfo.enable_training = 1;
+	tcInfo.train_use_offs = 1;
+
 	while((ch = getopt(argc, argv, "bcd:f:kl:stv")) != -1)
 		switch(ch) {
 		case 'b':
@@ -812,6 +819,11 @@ static int captureTime(struct timeCardInfo *tci)
 		tci->drift_total_count++;
 		tci->drift += tci->clk_status_drift;
 		tci->drift_count++;
+
+		tci->offset_total += tci->clk_status_offset;
+		tci->offset_total_count++;
+		tci->offset += tci->clk_status_offset;
+		tci->offset_count++;
 	}
 
 	target = tci->tcardClk;
@@ -1425,7 +1437,7 @@ static int wrI2CfloatR(struct axi_iic_info *iic, uint8_t addr, uint8_t reg, floa
 }
 
 /*
- * TC 1692299267.273176754 OS 1692299230.272996813 offset drift TAI
+ * TC 1692299267.273176754 OS 1692299230.272996813 offset drift
  * Sts TODsts GNSSsts UTCsts XO offset temp voltage watt status
  */
 static int logstats(struct timeCardInfo *tci)
@@ -1458,12 +1470,23 @@ static int logstats(struct timeCardInfo *tci)
 		    tci->bme_pressure,
 		    tci->bme_humidity);
 #endif
-	if (tci->enable_training)
+	if (tci->enable_training && (tci->train_use_offs == 0))
 		fprintf(tci->logf, " TR %d %d %d %d %e %d %d %e %e",
 		    tci->drift_total,
 		    tci->drift_total_count,
 		    tci->drift,
 		    tci->drift_count,
+		    tci->train_adj,
+		    tci->train_step,
+		    tci->train_stable,
+		    tci->aging,
+		    tci->xo_pull);
+	if (tci->enable_training && tci->train_use_offs)
+		fprintf(tci->logf, " TR %d %d %d %d %e %d %d %e %e",
+		    tci->offset_total,
+		    tci->offset_total_count,
+		    tci->offset,
+		    tci->offset_count,
 		    tci->train_adj,
 		    tci->train_step,
 		    tci->train_stable,
@@ -1525,16 +1548,30 @@ static int train_reset(struct timeCardInfo *tci)
 	tci->drift_total_count = 0;
 	tci->drift_count = 0;
 	tci->drift = 0;
+
+	tci->offset_total = 0;
+	tci->offset_total_count = 0;
+	tci->offset_count = 0;
+	tci->offset = 0;
+
 	return 0;
 }
 
 static int train(struct timeCardInfo *tci)
 {
-	if (tci->drift_count < tci->train_count)
-		return 0;
-	tci->train_adj = tci->drift;
-	tci->train_adj /= tci->drift_count;
-	tci->train_adj *= 1.0E-9;
+	if (tci->train_use_offs) {
+		if (tci->offset_count < tci->train_count)
+			return 0;
+		tci->train_adj = tci->offset;
+		tci->train_adj /= tci->offset_count;
+		tci->train_adj *= 1.0E-9;
+	} else {
+		if (tci->drift_count < tci->train_count)
+			return 0;
+		tci->train_adj = tci->drift;
+		tci->train_adj /= tci->drift_count;
+		tci->train_adj *= 1.0E-9;
+	}
 
 	/*
 	 * Increase stability if within +- 7.5E-10
@@ -1563,6 +1600,9 @@ static int train(struct timeCardInfo *tci)
 
 	tci->drift_count = 0;
 	tci->drift = 0;
+	tci->offset_count = 0;
+	tci->offset = 0;
+
 	return 0;
 }
 
@@ -1808,6 +1848,7 @@ static void pullstatsadd(struct timeCardInfo *tci)
 	pullbuf[tci->pullbindx] = tci->xo_offset;
 	pulltsbuf[tci->pullbindx] = tci->rcvTstmp.tv_sec;
 
+#if 0
 	/* XXX
 	 * This function is not running in sync with train.
 	 * So add the fractions not yet applied by train?
@@ -1819,6 +1860,7 @@ static void pullstatsadd(struct timeCardInfo *tci)
 		adj *= 1.0E-9;
 		pullbuf[tci->pullbindx] += adj;
 	}
+#endif
 	tci->aginglognext += (24*60*60);
 	if (tci->pullbcnt < PULLBUFSIZ)
 		tci->pullbcnt++;
@@ -1850,7 +1892,7 @@ static void calcaging(struct timeCardInfo *tci)
 {
 	float lastpull, prevpull, taging;
 	time_t laststmp, prevstmp, tperiod;
-	int32_t indx;
+	int32_t count, driftoff,  indx, total_count;
 
 	if (tci->agingnext > tci->rcvTstmp.tv_sec)
 		return;
@@ -1858,6 +1900,15 @@ static void calcaging(struct timeCardInfo *tci)
 	indx = pullstatindx(tci, 0);
 	lastpull = pullbuf[indx];
 	laststmp = pulltsbuf[indx];
+	if (tci->train_use_offs) {
+		count = tci->offset_count;
+		total_count = tci->offset_total_count;
+		driftoff = tci->offset;
+	} else {
+		count = tci->drift_count;
+		total_count = tci->drift_total_count;
+		driftoff = tci->drift;
+	}
 	if (tci->pullbcnt == 1) {
 		float adj;
 		tci->agingnext += (3 * 60 * 60);
@@ -1868,8 +1919,8 @@ static void calcaging(struct timeCardInfo *tci)
 		}
 		prevpull = lastpull;
 		prevstmp = laststmp;
-		adj = tci->drift;
-		adj /= tci->drift_count;
+		adj = driftoff;
+		adj /= count;
 		adj *= 1.0E-9;
 		lastpull = tci->xo_offset;
 		lastpull += adj;
@@ -1880,9 +1931,9 @@ static void calcaging(struct timeCardInfo *tci)
 		prevstmp = pulltsbuf[indx];
 		tci->agingnext += (24 * 60 * 60);
 		/* Try to sync to just after train */
-		if ((tci->train_step == 0) && (tci->drift_count > 100)) {
-			tci->agingnext -=  tci->drift_count - 2;
-			if (tci->drift_count > (12 * 60 * 60))
+		if ((tci->train_step == 0) && (count > 100)) {
+			tci->agingnext -=  count - 2;
+			if (count > (12 * 60 * 60))
 				tci->agingnext += (24 * 60 * 60);
 			/* Also adjust aging log */
 			tci->aginglognext = tci->agingnext;
@@ -1891,9 +1942,11 @@ static void calcaging(struct timeCardInfo *tci)
 	/* So we have more than one value */
 	tperiod = laststmp - prevstmp;
 	taging = lastpull - prevpull;
+#if 0
 	/* Try to compensate for the change in the aging */
 	if (tci->train_step == 0)
 		taging += tci->train_adj;
+#endif
 	taging /= tperiod;
 	if (tci->pullbcnt == 1) {
 		printf("Aging %e ns/s, period %lu s, total over period %e, tadj %e\n",
@@ -1902,7 +1955,7 @@ static void calcaging(struct timeCardInfo *tci)
 		return;
 	}
 
-	if (tci->drift_total_count > (4 * 86400)) {
+	if (total_count > (4 * 86400)) {
 		tci->aging *= 9;
 		tci->aging += taging;
 		tci->aging /= 10;
