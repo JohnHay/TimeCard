@@ -262,39 +262,27 @@ struct timeCardInfo {
 	struct timespec tcardClk;	// time from time card
 	struct timespec rcvTstmp;	// OS time at tcardClk
 	uint64_t tsc;
-	uint64_t ptsc;
 	uint64_t difftsc;
 	u_int cpuid;
-	u_int pcpuid;
 
 	int32_t clk_status_offset;
 	int32_t clk_status_drift;
-	uint32_t clk_insync_thresh;
 	uint32_t clk_clkstatus;
-	uint32_t clk_clkstatus_prev;
 	uint32_t clk_pps_select;
-	uint32_t clk_servo_offset_p;
-	uint32_t clk_servo_offset_i;
-	uint32_t clk_servo_drift_p;
-	uint32_t clk_servo_drift_i;
 	uint32_t pps_slave_control;
 	uint32_t pps_slave_status;
 	uint32_t tod_status;
 	uint32_t tod_gnss_status;
 	uint32_t tod_utc_status;
-	uint32_t tod_sat_num;
 
 	time_t kernel_upd_tstmp;
 
 	int kern_loop;
 	int ntp_adj_init;
 	int64_t kernel_offset;
-	int64_t kernel_offset_total;
 	long ntpa_offset;
 	int tai_offset;
 	int precision;
-	int count;
-	int nsamples;
 	int kern_stable;
 	int kern_stable_cnt;
 	int kern_stepped;
@@ -328,11 +316,7 @@ struct timeCardInfo {
 	float xo_pull;
 	float xo_offset;
 	float xo_aging;
-	uint32_t xo_uptime;
-	float xo_temperature;
-	float xo_voltage;
 	float xo_power;
-	uint32_t xo_status;
 
 	float aging;			/* Aging ns/s */
 	float dfaging;			// aging read from / to driftfile
@@ -792,13 +776,10 @@ static int captureTime(struct timeCardInfo *tci)
 	}
 	tci->rcvTstmp = gt.kernel;
 	tci->tcardClk = gt.card;
-	tci->ptsc = tci->tsc;
+	tci->difftsc = gt.tsc - tci->tsc;
 	tci->tsc = gt.tsc;
-	tci->difftsc = tci->tsc - tci->ptsc;
-	tci->pcpuid = tci->cpuid;
 	tci->cpuid = gt.cpuid;
 
-	tci->clk_clkstatus_prev = tci->clk_clkstatus;
 	tci->clk_clkstatus = gs.clk_status;
 	tci->tod_status = gs.tod_status;
 	tci->tod_gnss_status = gs.tod_gnss_status;
@@ -807,7 +788,6 @@ static int captureTime(struct timeCardInfo *tci)
 	tci->tod_utc_status = gs.tod_utc_status;
 	if (tci->tod_utc_status & TC_TOD_UTC_STATUS_UTC_VALID)
 		tci->tai_offset = (int)(tci->tod_utc_status & TC_TOD_UTC_STATUS_UTC_OFFSET_MASK);
-	tci->tod_sat_num = gs.tod_sat_num;
 
 	tci->clk_status_offset = gs.clk_offset;
 	tci->clk_status_drift = gs.clk_drift;
@@ -829,8 +809,6 @@ static int captureTime(struct timeCardInfo *tci)
 	target = tci->tcardClk;
 	target.tv_sec -= tci->tai_offset;
 	tci->kernel_offset = timespecoffset(&target, &tci->rcvTstmp);
-	if (tci->status.time_valid)
-		tci->kernel_offset_total += tci->kernel_offset;
 	/* XXX Maybe find a better place? */
 	if ((tci->kernel_offset < 10) && (tci->kernel_offset > -10)) {
 		tci->kern_stable_cnt++;
@@ -990,7 +968,6 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 				break;
 			}
 			st->state = TC_SYNC;
-			//tci->kernel_offset_total = 0;
 			break;
 		}
 		if (tci->pps_slave_control == 1)
@@ -1085,7 +1062,6 @@ static int updShmTime(struct timeCardInfo *tci)
 		tci->shm->leap = LEAP_NOTINSYNC;
 	}
 	tci->shm->precision = tci->precision;
-	tci->shm->nsamples = tci->nsamples;
 
 	memory_barrier();
 
@@ -1139,11 +1115,9 @@ static int updKernTime(struct timeCardInfo *tci)
 		return 0;
 	}
 
-	//offset = tci->kernel_offset;
-	offset = tci->kernel_offset_total;
+	offset = tci->kernel_offset;
 	if (tci->kern_loop != 0)
 		offset /= tci->kern_loop;
-	tci->kernel_offset_total = 0;
 
 	if (offset > MAXPHASE)
 		offset = MAXPHASE - 3;
@@ -1758,7 +1732,6 @@ static int xo_init(struct timeCardInfo *tci)
 	float xo_offset;
 	float xo_aging;
 	int err;
-	//uint32_t xo_uptime;
 	uint8_t text[256];
 	struct axi_iic_info *iic = &tci->iic_clk;
 
@@ -1830,10 +1803,7 @@ static int xo_stats(struct timeCardInfo *tci)
 
 	/* Read from sitime, use Reliable versions */
 	tci->xo_offset = rdI2CfloatR(iic, SIT_ADDR, XO_OFFSET, tci->xo_offset, 10.0e-14);
-	tci->xo_temperature = rdI2CfloatMM(iic, SIT_ADDR, XO_TEMP, tci->xo_temperature, -20.0, 200.0);
-	tci->xo_voltage = rdI2CfloatMM(iic, SIT_ADDR, XO_VOLTAGE, tci->xo_voltage, -1.0, 6.0);
 	tci->xo_power = rdI2CfloatMM(iic, SIT_ADDR, XO_HEATER_POWER, tci->xo_power, -1.0, 10.0);
-	tci->xo_status = rdI2Creg32R(iic, SIT_ADDR, XO_STATUS, tci->xo_status);
 
 	return 0;
 }
