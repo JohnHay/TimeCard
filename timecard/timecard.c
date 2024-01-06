@@ -287,14 +287,14 @@ struct timeCardInfo {
 	int kern_stable_cnt;
 	int kern_stepped;
 
-	int32_t drift_total;
-	int32_t drift_total_count;
-	int32_t drift;
-	int32_t drift_count;
-	int32_t offset_total;
-	int32_t offset_total_count;
-	int32_t offset;
-	int32_t offset_count;
+	int32_t drift_acc_total;
+	int32_t drift_acc_total_count;
+	int32_t drift_acc;
+	int32_t drift_acc_count;
+	int32_t offset_acc_total;
+	int32_t offset_acc_total_count;
+	int32_t offset_acc;
+	int32_t offset_acc_count;
 	int32_t train_use_offs;
 	int32_t train_count_max;
 	int32_t train_count;
@@ -324,9 +324,6 @@ struct timeCardInfo {
 
 	int32_t pullbindx;	/* last entry / next to be overwritten */
 	int32_t pullbcnt;	/* number of entries */
-	time_t agingtsmp;
-	time_t agingnext;
-	time_t aginglognext;
 
 	uint8_t serialno[6];
 	char serialnotxt[18];		// Format 12:34:56:78:90:AB + null
@@ -368,7 +365,7 @@ static int read_bme280(struct timeCardInfo *tci);
 static int logstats(struct timeCardInfo *tcInfo);
 static void timespec_sub(struct timespec *_v1, struct timespec *_v2,
     struct timespec *_result);
-static int train_init(struct timeCardInfo *tci);
+static int train_init(struct timeCardInfo *tci, int hotstart);
 static int train_reset(struct timeCardInfo *tci);
 static int train(struct timeCardInfo *tci);
 static int xo_init(struct timeCardInfo *tci);
@@ -388,17 +385,18 @@ static void driftfupdate(struct timeCardInfo *tci);
 void usage(void) {
 #ifdef USE_BME
 	printf("timecardd [-b] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n");
-	printf("\t-b: disable bme environmental monitoring\n");
+	printf("\t-b: enable bme environmental monitoring\n");
 #else
 	printf("timecardd [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n");
 #endif
-	printf("\t-c: disable clock monitoring\n");
+	printf("\t-c: enable clock monitoring\n");
 	printf("\t-d driftfile: file to periodically write the drift values, used to spead startup\n");
 	printf("\t-f timecard device: default /dev/timecard0\n");
-	printf("\t-k: disable kernel synchronisation\n");
+	printf("\t-h: hot start, assuming the drift is valid \n");
+	printf("\t-k: enable kernel synchronisation\n");
 	printf("\t-l logfile: file to write logs, HUP will close and reopen it\n");
-	printf("\t-s: disable ntp shm shared memory interface\n");
-	printf("\t-t: disable clock training\n");
+	printf("\t-s: enable ntp shm shared memory interface\n");
+	printf("\t-t: enable clock training\n");
 	printf("\t-v: verbose\n\n");
 	printf("\tdriftfile is optional and used to speed up subsequent clock convergence\n");
 	printf("\tlogfile is optional and used to write per second logging. A HUP will cause the file to be reopened\n");
@@ -407,20 +405,17 @@ void usage(void) {
 
 int main(int argc, char **argv)
 {
-	int ch, err, verbose = 0;
+	int ch, err, hotstart = 0, verbose = 0;
 	struct timespec now, nextup, tsleep;
 	struct shmTime volatile* shm;
 
 #ifdef USE_BME
 	tcInfo.enable_bme = 1;
 #endif
-	tcInfo.enable_clock = 1;
-	tcInfo.enable_kernel = 1;
-	tcInfo.enable_shm = 1;
-	tcInfo.enable_training = 1;
+
 	tcInfo.train_use_offs = 1;
 
-	while((ch = getopt(argc, argv, "bcd:f:kl:stv")) != -1)
+	while((ch = getopt(argc, argv, "bcd:f:hkl:stv")) != -1)
 		switch(ch) {
 		case 'b':
 			/* Silently do nothing if not defined. */
@@ -429,7 +424,7 @@ int main(int argc, char **argv)
 #endif
 			break;
 		case 'c':
-			tcInfo.enable_clock = 0;
+			tcInfo.enable_clock = 1;
 			break;
 		case 'd':
 			tcInfo.driftfname = optarg;
@@ -437,18 +432,21 @@ int main(int argc, char **argv)
 		case 'f':
 			tcInfo.tcdevname = optarg;
 			break;
+		case 'h':
+			hotstart = 1;
+			break;
 		case 'k':
-			tcInfo.enable_kernel = 0;
+			tcInfo.enable_kernel = 1;
 			break;
 		case 'l':
 			tcInfo.logfname = optarg;
 			tcInfo.logf = fopen(optarg, "a");
 			break;
 		case 's':
-			tcInfo.enable_shm = 0;
+			tcInfo.enable_shm = 1;
 			break;
 		case 't':
-			tcInfo.enable_training = 0;
+			tcInfo.enable_training = 1;
 			break;
 		case 'v':
 			verbose++;
@@ -527,17 +525,10 @@ int main(int argc, char **argv)
 		if (tcInfo.driftfname != NULL)
 			readdriftfile(&tcInfo);
 		xo_init(&tcInfo);
-		train_init(&tcInfo);
+		train_init(&tcInfo, hotstart);
 	}
 
-
-	/* Normally give 3 hours time for "stuff" to settle */
-	tcInfo.agingtsmp = now.tv_sec + (3 * 60 * 60);
-	//tcInfo.agingtsmp = now.tv_sec + (10 * 60);
-	tcInfo.agingnext = tcInfo.agingtsmp;
-	tcInfo.aginglognext = tcInfo.agingtsmp;
-
-	/* update drift file every hour */
+	/* update drift file every 3 hours */
 	tcInfo.nextdriftf = now.tv_sec + (3 * 60 * 60);
 
 #ifdef USE_BME
@@ -574,8 +565,8 @@ int main(int argc, char **argv)
 		logstats(&tcInfo);
 
 		if (tcInfo.enable_clock && tcInfo.enable_training && tcInfo.status.time_valid) {
-			train(&tcInfo);
-			calcaging(&tcInfo);
+			if (train(&tcInfo))
+				calcaging(&tcInfo);
 			xo_update(&tcInfo);
 			driftfupdate(&tcInfo);
 		}
@@ -795,15 +786,15 @@ static int captureTime(struct timeCardInfo *tci)
 	err = updateTimeStatus(tci);
 
 	if (tci->status.time_valid && (tci->clk_clkstatus & TC_CLK_STATUS_INSYNC)) {
-		tci->drift_total += tci->clk_status_drift;
-		tci->drift_total_count++;
-		tci->drift += tci->clk_status_drift;
-		tci->drift_count++;
+		tci->drift_acc_total += tci->clk_status_drift;
+		tci->drift_acc_total_count++;
+		tci->drift_acc += tci->clk_status_drift;
+		tci->drift_acc_count++;
 
-		tci->offset_total += tci->clk_status_offset;
-		tci->offset_total_count++;
-		tci->offset += tci->clk_status_offset;
-		tci->offset_count++;
+		tci->offset_acc_total += tci->clk_status_offset;
+		tci->offset_acc_total_count++;
+		tci->offset_acc += tci->clk_status_offset;
+		tci->offset_acc_count++;
 	}
 
 	target = tci->tcardClk;
@@ -1446,10 +1437,10 @@ static int logstats(struct timeCardInfo *tci)
 #endif
 	if (tci->enable_training && (tci->train_use_offs == 0))
 		fprintf(tci->logf, " TR %d %d %d %d %e %d %d %e %e",
-		    tci->drift_total,
-		    tci->drift_total_count,
-		    tci->drift,
-		    tci->drift_count,
+		    tci->drift_acc_total,
+		    tci->drift_acc_total_count,
+		    tci->drift_acc,
+		    tci->drift_acc_count,
 		    tci->train_adj,
 		    tci->train_step,
 		    tci->train_stable,
@@ -1457,10 +1448,10 @@ static int logstats(struct timeCardInfo *tci)
 		    tci->xo_pull);
 	if (tci->enable_training && tci->train_use_offs)
 		fprintf(tci->logf, " TR %d %d %d %d %e %d %d %e %e",
-		    tci->offset_total,
-		    tci->offset_total_count,
-		    tci->offset,
-		    tci->offset_count,
+		    tci->offset_acc_total,
+		    tci->offset_acc_total_count,
+		    tci->offset_acc,
+		    tci->offset_acc_count,
 		    tci->train_adj,
 		    tci->train_step,
 		    tci->train_stable,
@@ -1483,7 +1474,7 @@ static void timespec_sub(struct timespec *_v1, struct timespec *_v2,
 	}
 }
 
-static int train_init(struct timeCardInfo *tci)
+static int train_init(struct timeCardInfo *tci, int hotstart)
 {
 	tci->train_count_max = 24*60*60;	/* 1 day for now */
 	tci->train_step_max = 0;
@@ -1491,7 +1482,10 @@ static int train_init(struct timeCardInfo *tci)
 	tci->train_stable = 0;
 	tci->train_stable_max = 2;
 	tci->train_stable_min = -2;
-	tci->train_step = 9;
+	if (hotstart)
+		tci->train_step = tci->train_step_max;
+	else
+		tci->train_step = 9;
 	tci->train_count = tci->train_count_max / (1 << tci->train_step);
 
 	/* Probably a cold start, but with a driftfile */
@@ -1518,15 +1512,15 @@ static int train_init(struct timeCardInfo *tci)
  */
 static int train_reset(struct timeCardInfo *tci)
 {
-	tci->drift_total = 0;
-	tci->drift_total_count = 0;
-	tci->drift_count = 0;
-	tci->drift = 0;
+	tci->drift_acc_total = 0;
+	tci->drift_acc_total_count = 0;
+	tci->drift_acc_count = 0;
+	tci->drift_acc = 0;
 
-	tci->offset_total = 0;
-	tci->offset_total_count = 0;
-	tci->offset_count = 0;
-	tci->offset = 0;
+	tci->offset_acc_total = 0;
+	tci->offset_acc_total_count = 0;
+	tci->offset_acc_count = 0;
+	tci->offset_acc = 0;
 
 	return 0;
 }
@@ -1534,16 +1528,16 @@ static int train_reset(struct timeCardInfo *tci)
 static int train(struct timeCardInfo *tci)
 {
 	if (tci->train_use_offs) {
-		if (tci->offset_count < tci->train_count)
+		if (tci->offset_acc_count < tci->train_count)
 			return 0;
-		tci->train_adj = tci->offset;
-		tci->train_adj /= tci->offset_count;
+		tci->train_adj = tci->offset_acc;
+		tci->train_adj /= tci->offset_acc_count;
 		tci->train_adj *= 1.0E-9;
 	} else {
-		if (tci->drift_count < tci->train_count)
+		if (tci->drift_acc_count < tci->train_count)
 			return 0;
-		tci->train_adj = tci->drift;
-		tci->train_adj /= tci->drift_count;
+		tci->train_adj = tci->drift_acc;
+		tci->train_adj /= tci->drift_acc_count;
 		tci->train_adj *= 1.0E-9;
 	}
 
@@ -1568,16 +1562,18 @@ static int train(struct timeCardInfo *tci)
 			tci->train_step++;
 		tci->train_count = tci->train_count_max / (1 << tci->train_step);
 	}
-	/* XXX experiment to see if just aging work, one we are at min step */
-	//if (tci->train_step != tci->train_step_max)
-		tci->train_pull += tci->train_adj;
+	tci->train_pull += tci->train_adj;
 
-	tci->drift_count = 0;
-	tci->drift = 0;
-	tci->offset_count = 0;
-	tci->offset = 0;
+	tci->drift_acc_count = 0;
+	tci->drift_acc = 0;
+	tci->offset_acc_count = 0;
+	tci->offset_acc = 0;
 
-	return 0;
+	/* Let calcaging know we are at max step */
+	if (tci->train_step == tci->train_step_max)
+		return 1;
+	else
+		return 0;
 }
 
 /*
@@ -1812,26 +1808,14 @@ static void pullstatsadd(struct timeCardInfo *tci)
 {
 	float adj;
 
-	if (tci->aginglognext > tci->rcvTstmp.tv_sec)
-		return;
-	/* Use xo_offset because that includes the aging the XO applied. */
-	pullbuf[tci->pullbindx] = tci->xo_offset;
+	/*
+	 * Use xo_offset because that includes the aging the XO applied
+	 * and add tci->train_adj because it has not been applied yet,
+	 * but will be, just after this.
+	 */
+	pullbuf[tci->pullbindx] = tci->xo_offset + tci->train_adj;
 	pulltsbuf[tci->pullbindx] = tci->rcvTstmp.tv_sec;
 
-#if 0
-	/* XXX
-	 * This function is not running in sync with train.
-	 * So add the fractions not yet applied by train?
-	 * Only if there is a significant count to reduce the popcorn.
-	 */
-	if (tci->drift_count > 1000) {
-		adj = tci->drift;
-		adj /= tci->drift_count;
-		adj *= 1.0E-9;
-		pullbuf[tci->pullbindx] += adj;
-	}
-#endif
-	tci->aginglognext += (24*60*60);
 	if (tci->pullbcnt < PULLBUFSIZ)
 		tci->pullbcnt++;
 	tci->pullbindx++;
@@ -1856,7 +1840,8 @@ static int32_t pullstatindx(struct timeCardInfo *tci, int32_t _off)
 }
 
 /*
- * More than one time? aging recalc every 3 hours, but only updated ever 24 hours? At least for first day?
+ * We are called after a train() session when train_step == train_step_max,
+ * so basically once a day, synchronous with train().
  */
 static void calcaging(struct timeCardInfo *tci)
 {
@@ -1864,68 +1849,22 @@ static void calcaging(struct timeCardInfo *tci)
 	time_t laststmp, prevstmp, tperiod;
 	int32_t count, driftoff,  indx, total_count;
 
-	if (tci->agingnext > tci->rcvTstmp.tv_sec)
-		return;
 	pullstatsadd(tci);
+	if (tci->pullbcnt == 1) {
+		printf("First pull sample %lu\n", tci->rcvTstmp.tv_sec);
+		return;
+	}
 	indx = pullstatindx(tci, 0);
 	lastpull = pullbuf[indx];
 	laststmp = pulltsbuf[indx];
-	if (tci->train_use_offs) {
-		count = tci->offset_count;
-		total_count = tci->offset_total_count;
-		driftoff = tci->offset;
-	} else {
-		count = tci->drift_count;
-		total_count = tci->drift_total_count;
-		driftoff = tci->drift;
-	}
-	if (tci->pullbcnt == 1) {
-		float adj;
-		tci->agingnext += (3 * 60 * 60);
-		if (laststmp == tci->rcvTstmp.tv_sec) {
-			printf("First tsmp %lu\n", laststmp);
-			fflush(stdout);
-			return;
-		}
-		prevpull = lastpull;
-		prevstmp = laststmp;
-		adj = driftoff;
-		adj /= count;
-		adj *= 1.0E-9;
-		lastpull = tci->xo_offset;
-		lastpull += adj;
-		laststmp = tci->rcvTstmp.tv_sec;
-	} else {
-		indx = pullstatindx(tci, -1);
-		prevpull = pullbuf[indx];
-		prevstmp = pulltsbuf[indx];
-		tci->agingnext += (24 * 60 * 60);
-		/* Try to sync to just after train */
-		if ((tci->train_step == 0) && (count > 100)) {
-			tci->agingnext -=  count - 2;
-			if (count > (12 * 60 * 60))
-				tci->agingnext += (24 * 60 * 60);
-			/* Also adjust aging log */
-			tci->aginglognext = tci->agingnext;
-		}
-	}
-	/* So we have more than one value */
+	indx = pullstatindx(tci, -1);
+	prevpull = pullbuf[indx];
+	prevstmp = pulltsbuf[indx];
+
 	tperiod = laststmp - prevstmp;
 	taging = lastpull - prevpull;
-#if 0
-	/* Try to compensate for the change in the aging */
-	if (tci->train_step == 0)
-		taging += tci->train_adj;
-#endif
 	taging /= tperiod;
-	if (tci->pullbcnt == 1) {
-		printf("Aging %e ns/s, period %lu s, total over period %e, tadj %e\n",
-		    taging, tperiod, lastpull - prevpull, tci->train_adj);
-		fflush(stdout);
-		return;
-	}
-
-	if (total_count > (4 * 86400)) {
+	if (tci->pullbcnt > 4) {
 		tci->aging *= 9;
 		tci->aging += taging;
 		tci->aging /= 10;
