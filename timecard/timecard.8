@@ -37,7 +37,7 @@
 .Op Fl bc
 .Op Fl d Ar driftfile
 .Op Fl f Ar /dev/timecardN
-.Op Fl k
+.Op Fl hk
 .Op Fl l Ar logfile
 .Op Fl stv
 .Sh DESCRIPTION
@@ -53,15 +53,13 @@ time.
 .Xr iic 4
 Clock interface.
 .El
-By default all these options are turned on, but can be individually turned off.
 .Pp
-
 The options are as follows:
 .Bl -tag -width "-d /dev/timecardN"
 .It Fl b
-Disable BME monitoring, if it is compiled in.
+Enable BME monitoring, if it is compiled in.
 .It Fl c
-Disable TimeCard clock monitoring.
+Enable TimeCard clock monitoring.
 .It Fl d Ar driftfile
 The file to periodically write drift values.
 It is used to speed up TimeCard clock synchronization.
@@ -72,14 +70,17 @@ to use.
 If not specified,
 .Pa /dev/timecard0
 will be used.
+.It Fl h
+Enable a hot start.
+Assume a clock that were already disciplined or a valid drift file.
 .It Fl k
-Disable kernel synchronisation.
+Enable kernel synchronisation.
 .It Fl l Ar logfile
 The logfile to use for per second logs. If not specified, none will be used.
 .It Fl s
-Disable ntp shm shared memory interface.
+Enable ntp shm shared memory interface.
 .It Fl t
-Disable clock training (disciplining).
+Enable clock training (disciplining).
 .It Fl v
 Be more verbose.
 .El
@@ -125,42 +126,31 @@ of the
 .Nm
 command:
 .Pp
-.Dl "timecard -d driftfile.txt -l tc.log"
-.Dl "daemon -f -c timecard -d driftfile.txt -l tc.log"
+.Dl "timecard -c -d driftfile.txt -k -l tc.log -s -t"
+Option
+.Fl k
+can be left out if
+.Xr ntpd 8
+or similar will synchronise the kernel time.
+.Dl "daemon -f -c timecard -c -d driftfile.txt -k -l tc.log -s -t"
 .Sh DIAGNOSTICS
 The command may fail for one of the following reasons:
 .Bl -diag
-.It "example error message"
-An example of an error message.
-.It "another example error message."
+.It "Could not find IIC devices."
 Self explanatory.
+.It "Could not open all devices."
+Self explanatory.
+.It "Error initializing EEPROM %d"
+The error is not fatal.
 .El
 .Sh SEE ALSO
 .Xr timecard 4 ,
 .Xr iic 4
 .Lk https://github.com/opencomputeproject/Time-Appliance-Project/tree/master/Time-Card
 .Sh HISTORY
-The
 .Nm
-manual page example first appeared in
-.Fx 2.2 .
-.Pp
-Some other common
-.Sx HISTORY
-section examples are:
-.Pp
-The
-.Nm
-manual page example first appeared in
-.Bx 4.4 .
-.Pp
-The
-.Nm
-manual page example first appeared in
-.At v6 .
-.Sh AUTHORS
-This
-manual page was written by
-.An Mike Pritchard Aq Mt mpp@FreeBSD.org .
+is part of the
+.Xr timecard 4
+suite.
 .Sh BUGS
-The actual code for this command is vaporware.
+The only clock that is supported is the SiTime SiT5721.
