@@ -1,5 +1,6 @@
 
 LOCALBASE?=	/usr/local
+PVER:sh=	cat version
 WORKDIR=	${.CURDIR}/work
 STAGEDIR=	${WORKDIR}/staging
 
@@ -34,7 +35,8 @@ package:
 	make DESTDIR=${STAGEDIR} installconfig
 	make DESTDIR=${STAGEDIR} include-package
 	make DESTDIR=${STAGEDIR} man-package
-	${PKG_CMD} create -v -r ${STAGEDIR} -M pkg-manifest -p pkg-plist
+	make WORKDIR=${WORKDIR} version-package
+	${PKG_CMD} create -v -r ${STAGEDIR} -M ${WORKDIR}/pkg-manifest -p pkg-plist
 
 clean-package:
 	rm -rf ${WORKDIR}
@@ -46,5 +48,9 @@ include-package:
 man-package:
 	install -m 444 -o ${BINOWN} -g ${BINGRP} ${MAN4FILES} ${DESTDIR}${MAN4DEST}/
 	gzip -f ${DESTDIR}${MAN4DEST}/*.4
+
+version-package:
+	@echo version ${PVER}
+	@sed -e "s/%VERSION%/${PVER}/" < pkg-manifest > ${WORKDIR}/pkg-manifest
 
 .include <bsd.subdir.mk>

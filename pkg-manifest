@@ -1,5 +1,5 @@
 name: timecard
-version: "0.1"
+version: "%VERSION%"
 origin: local/timecard
 maintainer: john@sanren.ac.za
 prefix: /usr/local
