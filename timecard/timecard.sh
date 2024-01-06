@@ -11,11 +11,14 @@
 # timecard_enable (bool):	Set to "NO" by default.
 #				Set it to "YES" to enable timecard.
 # timecard_flags (str):	Set to "" by default.
-#				See timecard(8) for details.
+#				See timecard(8) options for details.
 # timecard_logfile (str):
 # timecard_driftfile (str):
 # timecard_hints (str):		See timecard_default_hints below.
 # timecard_modules (str):	See timecard_default_modules below.
+# timecard_pps_symlink (str):	Source_dev target_dev, eg.
+#				"/dev/timecard0 /dev/pps0"
+# timecard_servo (str):		See options for tc-adj-servo(8).
 # timecard_sync_wait (num):	Seconds to wait for card to sync.
 #				Default is 30 seconds.
 
@@ -44,6 +47,7 @@ pidfile="/var/run/${name}.pid"
 procname="/usr/local/sbin/${name}"
 command=/usr/sbin/daemon
 command_args="-f -c -T timecard -p ${pidfile} ${procname}"
+tc_adj_servo="/usr/local/sbin/tc-adj-servo"
 
 start_cmd="timecard_start"
 start_precmd="timecard_prestart"
@@ -92,6 +96,12 @@ timecard_start()
 	fi
 	if [ -n "${timecard_logfile}" ]; then
 		timecard_flags="${timecard_flags} -l ${timecard_logfile}"
+	fi
+	if [ -n "${timecard_servo}" ]; then
+		${tc_adj_servo} ${timecard_servo}
+	fi
+	if [ -n "${timecard_pps_symlink}" ]; then
+		ln -f -s ${timecard_pps_symlink}
 	fi
 	timecard_wait
 	/sbin/sysctl kern.timecounter.hardware="TimeCard"
