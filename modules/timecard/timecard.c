@@ -924,9 +924,9 @@ timecard_update_status_bits(struct timecard_softc *sc)
 	stb->tod_parse_error = (st->tod_status & TC_TOD_STATUS_PARSE_ERR) == TC_TOD_STATUS_PARSE_ERR;
 	stb->tod_checksum_error = (st->tod_status & TC_TOD_STATUS_CHECKSUM_ERR) == TC_TOD_STATUS_CHECKSUM_ERR;
 	stb->tod_uart_error = (st->tod_status & TC_TOD_STATUS_UART_ERR) == TC_TOD_STATUS_UART_ERR;
-	stb->tod_utc_offset = st->tod_utc_status & TC_TOD_UTC_STATUS_UTC_OFF;
+	stb->tod_utc_offset = st->tod_utc_status & TC_TOD_UTC_STATUS_UTC_OFFSET_MASK;
 	stb->tod_utc_valid = (st->tod_utc_status & TC_TOD_UTC_STATUS_UTC_VALID) == TC_TOD_UTC_STATUS_UTC_VALID;
-	stb->tod_leap_announce = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_ANN) == TC_TOD_UTC_STATUS_LEAP_ANN;
+	stb->tod_leap_announce = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_ANNOUNCE) == TC_TOD_UTC_STATUS_LEAP_ANNOUNCE;
 	stb->tod_leap_59 = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_59) == TC_TOD_UTC_STATUS_LEAP_59;
 	stb->tod_leap_61 = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_61) == TC_TOD_UTC_STATUS_LEAP_61;
 	stb->tod_leap_valid = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_VALID) == TC_TOD_UTC_STATUS_LEAP_VALID;

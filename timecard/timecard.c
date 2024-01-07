@@ -89,6 +89,7 @@
 #include <sys/timex.h>
 #include <dev/iicbus/iic.h>
 #include <timecard.h>
+#include <timecard_reg.h>
 
 #ifdef USE_BME
 #include "bme280.h"
@@ -105,34 +106,6 @@
 /* Used for sanity checks */
 #define XO_PULL_MAX		10.0E-6		/* default (10ppm) */
 #define XO_AGING_MAX		10.0E-14	/* ns/s */
-
-#define TC_CLK_CONTROL_ENABLE		0x00000001
-#define TC_CLK_CONTROL_TIME_ADJ		0x00000002
-#define TC_CLK_CONTROL_OFFSET_ADJ	0x00000004
-#define TC_CLK_CONTROL_DRIFT_ADJ	0x00000008
-#define TC_CLK_CONTROL_SERVO_ADJ	0x00000080
-#define TC_CLK_CONTROL_TIME		0x40000000
-#define TC_CLK_CONTROL_TIME_VAL		0x80000000
-
-#define TC_CLK_STATUS_INSYNC	(1 << 0)
-#define TC_CLK_STATUS_INHOLD	(1 << 1)
-
-#define TC_TOD_STATUS_PARSE_ERROR	(1 << 0)
-#define TC_TOD_STATUS_CHECKSUM_ERROR	(1 << 1)
-#define TC_TOD_STATUS_UART_ERROR	(1 << 2)
-
-#define TC_TOD_UTC_STATUS_UTC_OFFSET_MASK	0xFF
-#define TC_TOD_UTC_STATUS_UTC_VALID	(1 << 8)
-#define TC_TOD_UTC_STATUS_LEAP_ANNOUNCE	(1 << 12)
-#define TC_TOD_UTC_STATUS_LEAP_59	(1 << 13)
-#define TC_TOD_UTC_STATUS_LEAP_61	(1 << 14)
-#define TC_TOD_UTC_STATUS_LEAP_VALID	(1 << 16)
-
-#define TC_TOD_GNSS_STATUS_MSK		0x00000007
-#define TC_TOD_GNSS_FIX_OK		0x00010000
-#define TC_TOD_GNSS_FIX			0x001E0000
-#define TC_TOD_GNSS_FIX_VALID		0x10000000
-
 
 /* Register definitions of the SiT5721 DCOCXO */
 #define SIT_ADDR		0x60
@@ -785,7 +758,7 @@ static int captureTime(struct timeCardInfo *tci)
 
 	err = updateTimeStatus(tci);
 
-	if (tci->status.time_valid && (tci->clk_clkstatus & TC_CLK_STATUS_INSYNC)) {
+	if (tci->status.time_valid && (tci->clk_clkstatus & TC_CLK_STATUS_IN_SYNC)) {
 		tci->drift_acc_total += tci->clk_status_drift;
 		tci->drift_acc_total_count++;
 		tci->drift_acc += tci->clk_status_drift;
@@ -883,9 +856,9 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 	    (tci->tod_gnss_status & TC_TOD_GNSS_FIX_OK) &&
 	    (tci->tai_offset > 32) && (tci->tai_offset < 42))
 		gnss_fix = true;
-	if (tci->clk_clkstatus & TC_CLK_STATUS_INHOLD)
+	if (tci->clk_clkstatus & TC_CLK_STATUS_IN_HOLDOVER)
 		inhold = true;
-	if (!inhold && (tci->clk_clkstatus & TC_CLK_STATUS_INSYNC))
+	if (!inhold && (tci->clk_clkstatus & TC_CLK_STATUS_IN_SYNC))
 		insync = true;
 	if (gnss_fix && insync)
 		vitals_ok = true;
