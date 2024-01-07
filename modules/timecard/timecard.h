@@ -29,17 +29,6 @@
 #ifndef _TIMECARD_H_
 #define _TIMECARD_H_
 
-/*
- * Outstanding:
- *
- * Configure:
- * TOD uart polarity
- * TOD leap correction
- * AXIGPIOExtGPIO2 - MAC/Clock COM select + EEPROM WP
- * AXIGPIOGNSSGPIO2 - reset - gnss1, gnss2
- *
- */
-
 /* Return the card time and kernel time */
 struct timecard_time {
 	struct timespec card;	/* time read from card */

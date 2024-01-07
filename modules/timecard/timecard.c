@@ -27,7 +27,8 @@
  */
 
 /*
- * FreeBSD driver for the OCP TAP TimeCard
+ * FreeBSD driver for the OCP TAP TimeCard, see:
+ * https://github.com/opencomputeproject/Time-Appliance-Project/tree/master/Time-Card
  *
  */
 
@@ -58,7 +59,7 @@
 #include <timecard_bus.h>
 #include <timecard_reg.h>
 
-#define TC_VERSION		0x00000003
+#define TC_VERSION		0x00000004
 
 struct timecard_corelist {
 	uint32_t cl_core;
@@ -642,7 +643,6 @@ static struct cdevsw timecard_cdevsw = {
 	.d_name =	"TimeCard",
 };
 
-
 static int timecard_detach(device_t dev);
 static struct resource *
 timecard_bus_alloc_resource(device_t dev, device_t child, int type, int *rid,
@@ -667,7 +667,6 @@ static int
 timecard_bus_child_location(device_t dev, device_t child, struct sbuf *sb);
 static int
 timecard_bus_child_pnpinfo(device_t dev, device_t child, struct sbuf *sb);
-
 
 const char timecard_driver_name[] = "timecard";
 
@@ -1009,7 +1008,6 @@ timecard_ioctl_control(struct timecard_softc *sc, struct timecard_control *tc)
 		bus_write_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG, tc->tod_control);
 	if (tc->write & TC_TOD_STATUS_CLR)
 		bus_write_4(mres, sc->sc_tod_offset + TC_TOD_STATUS_REG, TC_TOD_STATUS_MASK);
-	/* XXX Does TOD have to be disabled? */
 	if (tc->write & TC_TOD_UART_BAUD_RATE)
 		timecard_tod_uart_baud_update(sc, tc->tod_uart_baud_rate);
 	if (tc->write & TC_TOD_UART_POLARITY)
@@ -1765,7 +1763,6 @@ timecard_detach(device_t dev)
 	}
 	if (sc->sc_msi)
 		pci_release_msi(dev);
-	printf("free b mres\n");
 	if (sc->sc_bar->b_res != NULL) {
 		bus_release_resource(dev, sc->sc_bar->b_type, sc->sc_bar->b_rid, sc->sc_bar->b_res);
 		sc->sc_bar->b_res = NULL;
@@ -1792,7 +1789,6 @@ timecard_detach(device_t dev)
 		mtx_destroy(&sc->sc_pps_mtx);
 	if (mtx_initialized(&sc->sc_dev_mtx))
 		mtx_destroy(&sc->sc_dev_mtx);
-	printf("TimeCard detach!\n");
 	return (0);
 }
 
