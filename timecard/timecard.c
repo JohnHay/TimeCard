@@ -1852,6 +1852,7 @@ static void calcaging(struct timeCardInfo *tci)
 	pullstatsadd(tci);
 	if (tci->pullbcnt == 1) {
 		printf("First pull sample %lu\n", tci->rcvTstmp.tv_sec);
+		fflush(stdout);
 		return;
 	}
 	indx = pullstatindx(tci, 0);
