@@ -574,6 +574,7 @@ struct timecard_softc {
 	uint32_t	sc_clk_offset;
 	uint32_t	sc_fpga_pps_offset;
 	uint32_t	sc_gpio_ext_offset;
+	uint32_t	sc_gpio_gnss_offset;
 	uint32_t	sc_pps_slave_offset;
 	uint32_t	sc_tod_offset;
 	struct mtx	sc_clk_cntrl_mtx;
@@ -850,11 +851,37 @@ signed_mag_2_twos_compl(uint32_t val)
 }
 
 static void
-timecard_clear_tod_status(struct timecard_softc *sc) {
+timecard_tod_status_clear(struct timecard_softc *sc) {
 	struct resource *mres;
 
 	mres = sc->sc_bar->b_res;
 	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_STATUS_REG, TC_TOD_STATUS_MASK);
+}
+
+static void
+timecard_tod_uart_baud_update(struct timecard_softc *sc, uint32_t baud)
+{
+	uint32_t ctrl;
+	struct resource *mres;
+
+	mres = sc->sc_bar->b_res;
+	ctrl = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG);
+	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG, ctrl & ~TC_TOD_CONTROL_ENABLE);
+	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_BAUDRATE_REG, baud);
+	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG, ctrl);
+}
+
+static void
+timecard_tod_uart_polarity_update(struct timecard_softc *sc, uint32_t polarity)
+{
+	uint32_t ctrl;
+	struct resource *mres;
+
+	mres = sc->sc_bar->b_res;
+	ctrl = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG);
+	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG, ctrl & ~TC_TOD_CONTROL_ENABLE);
+	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_POLARITY_REG, polarity);
+	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG, ctrl);
 }
 
 static void
@@ -984,7 +1011,15 @@ timecard_ioctl_control(struct timecard_softc *sc, struct timecard_control *tc)
 		bus_write_4(mres, sc->sc_tod_offset + TC_TOD_STATUS_REG, TC_TOD_STATUS_MASK);
 	/* XXX Does TOD have to be disabled? */
 	if (tc->write & TC_TOD_UART_BAUD_RATE)
-		bus_write_4(mres, sc->sc_tod_offset + TC_TOD_BAUDRATE_REG, tc->tod_uart_baud_rate);
+		timecard_tod_uart_baud_update(sc, tc->tod_uart_baud_rate);
+	if (tc->write & TC_TOD_UART_POLARITY)
+		timecard_tod_uart_polarity_update(sc, tc->tod_uart_polarity);
+	if (tc->write & TC_TOD_CORRECTION)
+		bus_write_4(mres, sc->sc_tod_offset + TC_TOD_CORRECTION_REG, tc->tod_correction);
+	if (tc->write & TC_GPIO_EXT_GPIO2)
+		bus_write_4(mres, sc->sc_gpio_ext_offset + TC_GPIO_X_GPIO2_REG, tc->gpio_ext_gpio2);
+	if (tc->write & TC_GPIO_GNSS_RESET)
+		bus_write_4(mres, sc->sc_gpio_gnss_offset + TC_GPIO_X_GPIO2_REG, tc->gpio_gnss_reset);
 
 	/* Read values requested. */
 	if (tc->read & TC_CLK_SELECT)
@@ -1020,6 +1055,14 @@ timecard_ioctl_control(struct timecard_softc *sc, struct timecard_control *tc)
 		tc->tod_control = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG);
 	if (tc->read & TC_TOD_UART_BAUD_RATE)
 		tc->tod_uart_baud_rate = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_BAUDRATE_REG);
+	if (tc->read & TC_TOD_UART_POLARITY)
+		tc->tod_uart_polarity = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_POLARITY_REG);
+	if (tc->read & TC_TOD_CORRECTION)
+		tc->tod_correction = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_CORRECTION_REG);
+	if (tc->read & TC_GPIO_EXT_GPIO2)
+		tc->gpio_ext_gpio2 = bus_read_4(mres, sc->sc_gpio_ext_offset + TC_GPIO_X_GPIO2_REG);
+	if (tc->read & TC_GPIO_GNSS_RESET)
+		tc->gpio_gnss_reset = bus_read_4(mres, sc->sc_gpio_gnss_offset + TC_GPIO_X_GPIO2_REG);
 }
 
 int
@@ -1093,7 +1136,7 @@ timecard_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thr
 		get_status = (struct timecard_status *)data;
 		timecard_get_status(sc, get_status);
 		if (get_status->tod_status & TC_TOD_STATUS_MASK)
-			timecard_clear_tod_status(sc);
+			timecard_tod_status_clear(sc);
 		break;
 	case TCIOCGETVERSION:
 		get_version = (struct timecard_version *)data;
@@ -1293,6 +1336,8 @@ timecard_init(struct timecard_softc *sc)
 			sc->sc_version.axi_gpio = tcl->cl_version;
 			if (tcl->cl_instance == 0)
 				sc->sc_gpio_ext_offset = offs_start;
+			else if (tcl->cl_instance == 1)
+				sc->sc_gpio_gnss_offset = offs_start;
 			break;
 		case TC_CORE_TYPE_SIG_GEN:
 			val = bus_read_4(mres, offs_start + TC_GEN_VERSION_REG);
@@ -1441,9 +1486,9 @@ timecard_init(struct timecard_softc *sc)
 
 	/* select IIC or UART for MAC/clock communication */
 	if (timecard_iic_clock_enable)
-		bus_write_4(mres, sc->sc_gpio_ext_offset + AXI_GPIO_X_GPIO2_REG, 0x80000000);
+		bus_write_4(mres, sc->sc_gpio_ext_offset + TC_GPIO_X_GPIO2_REG, 0x80000000);
 	else
-		bus_write_4(mres, sc->sc_gpio_ext_offset + AXI_GPIO_X_GPIO2_REG, 0x00000000);
+		bus_write_4(mres, sc->sc_gpio_ext_offset + TC_GPIO_X_GPIO2_REG, 0x00000000);
 
 	sc->sc_pps_remove_jitter = 1;
 

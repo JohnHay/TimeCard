@@ -185,6 +185,10 @@ struct timecard_control {
     uint32_t pps_slave_cable_delay;	/* PpsSlaveCableDelay */
     uint32_t tod_control;		/* TodSlaveControl */
     uint32_t tod_uart_baud_rate;	/* TodSlaveUartBaudRate */
+    uint32_t tod_uart_polarity;		/* TodSlaveUartPolarity */
+    uint32_t tod_correction;		/* TodSlaveCorrection */
+    uint32_t gpio_ext_gpio2;		/* AXIGPIOextGPIO2 */
+    uint32_t gpio_gnss_reset;		/* AXIGPIOGNSSGPIO2 */
 };
 .Ed
 The read and write members define which registers should be read and written to. A bitwise OR of the following:
@@ -200,6 +204,10 @@ The read and write members define which registers should be read and written to.
 .It TC_PPS_SLAVE_CABLE_DELAY
 .It TC_TOD_CONTROL
 .It TC_TOD_UART_BAUD_RATE
+.It TC_TOD_UART_POLARITY
+.It TC_TOD_CORRECTION
+.It TC_GPIO_EXT_GPIO2
+.It TC_GPIO_GNSS_RESET
 .El
 The following are used to clear the sticky error bits in the registers when used in the write member:
 .Bl -tag -width TC_PPS_SLAVE_CABLE_DELAY -compact -offset "1234"

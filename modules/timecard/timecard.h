@@ -74,6 +74,10 @@ struct timecard_status {
 #define TC_TOD_CONTROL			(1 << 10)
 #define TC_TOD_STATUS_CLR		(1 << 11)
 #define TC_TOD_UART_BAUD_RATE		(1 << 12)
+#define TC_TOD_UART_POLARITY		(1 << 13)
+#define TC_TOD_CORRECTION		(1 << 14)
+#define TC_GPIO_EXT_GPIO2		(1 << 15)
+#define TC_GPIO_GNSS_RESET		(1 << 16)
 
 struct timecard_control {
 	uint32_t read;
@@ -95,6 +99,10 @@ struct timecard_control {
 	uint32_t pps_slave_cable_delay;		/* PpsSlaveCableDelay */
 	uint32_t tod_control;			/* TodSlaveControl */
 	uint32_t tod_uart_baud_rate;		/* TodSlaveUartBaudRate */
+	uint32_t tod_uart_polarity;		/* TodSlaveUartPolarity */
+	uint32_t tod_correction;		/* TodSlaveCorrection */
+	uint32_t gpio_ext_gpio2;		/* AXIGPIOextGPIO2 */
+	uint32_t gpio_gnss_reset;		/* AXIGPIOGNSSGPIO2 */
 };
 
 struct timecard_version {
