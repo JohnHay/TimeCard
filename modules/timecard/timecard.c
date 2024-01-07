@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2023 John Hay
+ * Copyright (c) 2024 John Hay
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -503,6 +503,7 @@ struct timecard_status_bits {
 	bool tod_leap_59;
 	bool tod_leap_61;
 	bool tod_leap_valid;
+	int32_t tod_time_to_leap_sec;
 	bool gnss_fix_ok;
 	uint8_t gnss_fix;
 	uint8_t gnss_sat_num_seen;
@@ -872,6 +873,7 @@ timecard_get_status(struct timecard_softc *sc, struct timecard_status *st)
 		bus_write_4(mres, sc->sc_tod_offset + TC_TOD_STATUS_REG, st->tod_status & TC_TOD_STATUS_MASK);
 #endif
 	st->tod_utc_status = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_UTC_STATUS_REG);
+	st->tod_time_to_leap_sec = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_TIME_TO_LEAP_SECOND);
 	st->tod_gnss_status = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_GNSS_STATUS_REG);
 	st->tod_sat_num = bus_read_4(mres, sc->sc_tod_offset + TC_TOD_SAT_NUM_REG);
 	st->pps_slave_status = bus_read_4(mres, sc->sc_pps_slave_offset + TC_PPS_SLAVE_STATUS_REG);
@@ -902,6 +904,7 @@ timecard_update_status_bits(struct timecard_softc *sc)
 	stb->tod_leap_59 = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_59) == TC_TOD_UTC_STATUS_LEAP_59;
 	stb->tod_leap_61 = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_61) == TC_TOD_UTC_STATUS_LEAP_61;
 	stb->tod_leap_valid = (st->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_VALID) == TC_TOD_UTC_STATUS_LEAP_VALID;
+	stb->tod_time_to_leap_sec = st->tod_time_to_leap_sec;
 	if (st->tod_gnss_status & TC_TOD_GNSS_FIX_VALID) {
 		stb->gnss_fix_ok = (st->tod_gnss_status & TC_TOD_GNSS_FIX_OK) == TC_TOD_GNSS_FIX_OK;
 		stb->gnss_fix = (st->tod_gnss_status & TC_TOD_GNSS_FIX) >> 17;
@@ -1192,6 +1195,7 @@ timecard_add_sysctl(struct timecard_softc *sc)
 	SYSCTL_ADD_U8(ctx, parent, OID_AUTO, "gnss_sat_num_seen", CTLFLAG_RD, &sc->sc_st_bits.gnss_sat_num_seen, 0, "gnss_sat_num_seen");
 	SYSCTL_ADD_U8(ctx, parent, OID_AUTO, "gnss_fix", CTLFLAG_RD, &sc->sc_st_bits.gnss_fix, 0, "gnss_fix");
 	SYSCTL_ADD_BOOL(ctx, parent, OID_AUTO, "gnss_fix_ok", CTLFLAG_RD, &sc->sc_st_bits.gnss_fix_ok, 0, "gnss_fix_ok");
+	SYSCTL_ADD_S32(ctx, parent, OID_AUTO, "tod_time_to_leap_sec", CTLFLAG_RD, &sc->sc_st_bits.tod_time_to_leap_sec, 0, "tod_time_to_leap_sec");
 	SYSCTL_ADD_BOOL(ctx, parent, OID_AUTO, "tod_leap_valid", CTLFLAG_RD, &sc->sc_st_bits.tod_leap_valid, 0, "tod_leap_valid");
 	SYSCTL_ADD_BOOL(ctx, parent, OID_AUTO, "tod_leap_61", CTLFLAG_RD, &sc->sc_st_bits.tod_leap_61, 0, "tod_leap_61");
 	SYSCTL_ADD_BOOL(ctx, parent, OID_AUTO, "tod_leap_59", CTLFLAG_RD, &sc->sc_st_bits.tod_leap_59, 0, "tod_leap_59");

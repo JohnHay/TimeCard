@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2023 John Hay
+ * Copyright (c) 2024 John Hay
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -126,6 +126,7 @@
 #define TC_TOD_UTC_STATUS_LEAP_59		0x00002000
 #define TC_TOD_UTC_STATUS_LEAP_61		0x00004000
 #define TC_TOD_UTC_STATUS_LEAP_VALID		0x00010000
+#define TC_TOD_TIME_TO_LEAP_SECOND		0x00000034
 #define TC_TOD_GNSS_STATUS_REG			0x00000040
 #define TC_TOD_GNSS_STATUS_MSK			0x00000007
 #define TC_TOD_GNSS_FIX_OK			0x00010000

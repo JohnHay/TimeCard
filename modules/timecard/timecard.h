@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2023 John Hay
+ * Copyright (c) 2024 John Hay
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,26 +30,14 @@
 #define _TIMECARD_H_
 
 /*
- * IOCTLs needed
- *
- * Reading:
- * core and firmware versions
- * selections: gnss, pps, baud rate, clk select source for adjustments
- * time to leap, uart polarity, leap correction
- * eeprom serial number?
+ * Outstanding:
  *
  * Configure:
- * TOD protocol select, gnss, messages
- * TOD Baud rate
- * uart polarity, leap correction
- * clk select source for adjustments
+ * TOD uart polarity
+ * TOD leap correction
+ * AXIGPIOExtGPIO2 - MAC/Clock COM select + EEPROM WP
+ * AXIGPIOGNSSGPIO2 - reset - gnss1, gnss2
  *
- * reset - gnss1, gnss2, ?
- *
- * clear TOD status errs
- *
- * Cable delay
- * ?
  */
 
 /* Return the card time and kernel time */
@@ -69,6 +57,7 @@ struct timecard_status {
 	uint32_t tod_utc_status;	/* TodSlaveUtcStatus */
 	uint32_t tod_gnss_status;	/* TodSlaveAntennaStatus */
 	uint32_t tod_sat_num;		/* TodSlaveSateliteNumber */
+	int32_t tod_time_to_leap_sec;	/* TodSlaveTimeToLeapSecond */
 	uint32_t pps_slave_status;	/* PpsSlaveStatus */
 };
 
