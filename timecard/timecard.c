@@ -27,21 +27,11 @@
  */
 
 /*
- * XXX Todo:
- *
- * Maybe add a period. If the gnss is not valid for longer than..., do what?
- * If the time is too far out on startup, step the time.
- * If the timecard has not synced yet, wait until it has.
- * Select a CPU to bind to. Currently just selects CPU 0.
- *
- * Done
- * Print the number that was wrong and caused the iicerror increment.
- */
-/*
  * Main aim:
  *    Read time directly from the TimeCard and make it available through
  *    shm for ntpd's use.
  *
+ * Adjust the kernel time using ntp_adjtime().
  * Adjust the SiTime oscillator to minimise the frequency error.
  * Calculate the oscillator aging and compensate for that.
  * Regularly update a log file with statistics.
@@ -52,15 +42,7 @@
  * On startup, once the aging feature of the oscillator is being used,
  * cold and warm starts should be handled differently because with a warm
  * start, the oscillator will already be applying aging.
- *
- * It might be better not to adjust the oscillator in the warm start case.
- *
- * Inputs:
- *   There might be a driftfile or not.
- *   The XO pull value, aging and offset registers might be 0 (power on) or
- *   have values (warm boot).
- *
- * Read driftfile.
+ * Read driftfile, if it exists.
  * Read XO values - xo_init()
  * Let train_init() look through and decide.
  */
@@ -470,10 +452,8 @@ int main(int argc, char **argv)
 
 	if (tcInfo.iic.fd != -1) {
 		err = probe_eeprom(&tcInfo);
-		if (err) {
+		if (err)
 			printf("Error initializing EEPROM %d\n", err);
-			//exit(EIO);
-		}
 		if (verbose)
 			printf("Serial Number: %s\n", tcInfo.serialnotxt);
 	}
@@ -896,7 +876,6 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 			if (err) {
 				printf("TC_STEP ioctl error %d\n", err);
 				fflush(stdout);
-				//break;
 			}
 			gt.card.tv_sec -= tci->tai_offset;
 			err = clock_settime(CLOCK_REALTIME, &gt.card);
@@ -1355,7 +1334,6 @@ static int wrI2Creg32(struct axi_iic_info *iic, uint8_t addr, uint8_t reg, uint3
 	err = axi_iic_xfer(iic, msgs, 1);
 	if (err)
 		iic->iicxfererrcnt++;
-		//printf("axi_iic_xfer error %d\n", err);
 	return (err);
 }
 
@@ -1683,7 +1661,6 @@ static int read_bme280(struct timeCardInfo *tci)
 	tci->bme_pressure = comp_data.pressure * 0.01;
 	tci->bme_humidity = comp_data.humidity;
 
-	//printf("%0.2lf, %0.2lf, %0.2lf\n", comp_data.temperature, comp_data.pressure * 0.01, comp_data.humidity);
 	return rslt;
 }
 #endif
@@ -1721,7 +1698,6 @@ static int xo_init(struct timeCardInfo *tci)
 	xo_aging = rdI2CfloatR(iic, SIT_ADDR, XO_AGE_COMP, 0, 0.0);
 	xo_offset = rdI2CfloatR(iic, SIT_ADDR, XO_OFFSET, 0, 1.0E-12);
 
-	// XXX Should there be more checking?
 	tci->xo_pull = xo_pull;
 	tci->xo_aging = xo_aging;
 	tci->xo_offset = xo_offset;
