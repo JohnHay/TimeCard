@@ -77,6 +77,10 @@
 #include "bme280.h"
 #endif
 
+/* Standard FreeBSD timecounter math introduces a small error. */
+#define FBSD_FREQ_ERR	(1.52588e-05)
+#define SCALE_FREQ	65536		/* frequency scale */
+
 #define DEVLEN			20	/* device name should not be longer */
 #define DEVPREF			"/dev/"
 #define DEFAULTDEV		"timecard0"
@@ -1035,6 +1039,7 @@ static int initKernTime(struct timeCardInfo *tc)
 
 	memset(&tx, 0, sizeof(tx));
 	tx.modes = MOD_NANO | MOD_STATUS | MOD_OFFSET | MOD_FREQUENCY | MOD_TIMECONST | MOD_CLKB;
+	tx.freq = (long)(FBSD_FREQ_ERR * SCALE_FREQ);
 	tx.status = STA_PLL;
 	return ntp_adjtime(&tx);
 }
@@ -1113,10 +1118,8 @@ static int updKernTime(struct timeCardInfo *tci)
 	offset -= 2000;
 	offset += (tx.constant + 1);
 #endif
-	tx.modes |= MOD_FREQUENCY;
 	tx.modes |= MOD_OFFSET;
 	tx.offset = (long)offset;
-	tx.freq = 0;
 	tx.maxerror = 1;
 	tx.esterror = 1;
 	tci->kernel_upd_tstmp = tci->rcvTstmp.tv_sec;
