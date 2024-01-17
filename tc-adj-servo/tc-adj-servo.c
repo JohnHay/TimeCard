@@ -36,6 +36,9 @@
 #include <sys/ioctl.h>
 
 #include <timecard.h>
+#include <timecard_reg.h>
+
+static int pps_servo_enable(int fd, int enable);
 
 void usage(void) {
 	printf("usage: tst-servo [-d [-p Kp] [-i Ki]] [-o [-p Kp] [-i Ki]]\n");
@@ -135,6 +138,7 @@ int main(int argc, char **argv)
 	    		gc.clk_servo_drift_Ki = dKi;
 		}
 		printf("\n");
+		pps_servo_enable(tcfd, 0);
 		gc.write = TC_CLK_SERVO_ADJ;
 		err = ioctl(tcfd, TCIOCCONTROL, (caddr_t)&gc);
 		if (err) {
@@ -146,8 +150,31 @@ int main(int argc, char **argv)
 		    gc.clk_servo_offset_Ki,
 		    gc.clk_servo_drift_Kp,
 		    gc.clk_servo_drift_Ki);
+		pps_servo_enable(tcfd, 1);
 	}
 
 	close(tcfd);
 	return 0;
+}
+
+static int pps_servo_enable(int fd, int enable)
+{
+	int err;
+	struct timecard_control tc;
+
+	memset(&tc, 0, sizeof(struct timecard_control));
+	if (enable) {
+		tc.write = TC_CLK_SELECT | TC_PPS_SLAVE_CONTROL;
+		tc.clk_select = 1;
+		tc.pps_slave_control = 1;
+	} else {
+		tc.read = TC_CLK_SELECT | TC_PPS_SLAVE_CONTROL;
+		tc.write = TC_CLK_CONTROL | TC_CLK_SELECT | TC_PPS_SLAVE_CONTROL;
+		tc.clk_control = TC_CLK_CONTROL_DRIFT_ADJ | TC_CLK_CONTROL_ENABLE;
+		tc.clk_select = 254;
+		tc.pps_slave_control = 0;
+	}
+	err = ioctl(fd, TCIOCCONTROL, &tc);
+
+	return err;
 }
