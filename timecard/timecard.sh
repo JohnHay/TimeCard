@@ -90,6 +90,10 @@ timecard_prestart()
 
 timecard_start()
 {
+	if [ ! -c "/dev/timecard0" ]; then
+		echo "timecard driver did not load!"
+		return 6
+	fi
 	if [ -n "${timecard_driftfile}" ]; then
 		#command_args="${command_args} -d ${timecard_driftfile}"
 		timecard_flags="${timecard_flags} -d ${timecard_driftfile}"
