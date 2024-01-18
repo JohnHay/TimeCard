@@ -1430,6 +1430,7 @@ static void timespec_sub(struct timespec *_v1, struct timespec *_v2,
 
 static int train_init(struct timeCardInfo *tci, int hotstart)
 {
+	int cold = 0;
 	tci->train_count_max = 24*60*60;	/* 1 day for now */
 	tci->train_step_max = 0;
 	tci->train_step_min = 10;
@@ -1443,9 +1444,11 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
 	tci->train_count = tci->train_count_max / (1 << tci->train_step);
 
 	/* Probably a cold start, but with a driftfile */
-	if (tci->xo_offset == 0.0 && tci->dfaging != 0.0) {
+	if (tci->xo_offset == 0.0 && (tci->dfaging != 0.0 || tci->dfoffset != 0.0)) {
 		tci->aging = tci->dfaging;
 		tci->train_pull = tci->dfoffset;
+		xo_update(tci);
+		cold = 1;
 	/* Warm start, assume the values in the XO is more correct. */
 	} else if (tci->xo_offset != 0.0) {
 		tci->aging = tci->xo_aging;
@@ -1455,7 +1458,8 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
 		tci->train_pull = tci->xo_pull;
 	}
 	if (tci->aging != 0.0 || tci->train_pull != 0.0)
-		printf("Aging %e ns/s, pull %e s\n", tci->aging, tci->train_pull);
+		printf("Aging %e ns/s, pull %e s, %s start\n",
+		    tci->aging, tci->train_pull, cold ? "cold": "warm");
 
 	return 0;
 }
