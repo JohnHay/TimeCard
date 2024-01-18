@@ -1486,7 +1486,7 @@ timecard_init(struct timecard_softc *sc)
 	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVOOFFSETFACTORI_REG, 0x1000);
 	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, TC_CLK_CONTROL_SERVO_ADJ);
 	/* Disable and reenable AdjClk to clear old drift values */
-	if (bus_write_4(mres, sc->sc_clk_offset + TC_CLK_STATUSDRIFT_REG))
+	if (bus_read_4(mres, sc->sc_clk_offset + TC_CLK_STATUSDRIFT_REG))
 		bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, 0);
 	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, TC_CLK_CONTROL_ENABLE);
 
