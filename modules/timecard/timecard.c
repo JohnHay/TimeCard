@@ -1476,11 +1476,19 @@ timecard_init(struct timecard_softc *sc)
 	val = (timecard_gnss1_proto << 28) | TC_TOD_CONTROL_ENABLE;
 	bus_write_4(mres, sc->sc_tod_offset + TC_TOD_CONTROL_REG, val);
 
-	val = bus_read_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG);
-	if ((val & TC_CLK_CONTROL_ENABLE) == 0) {
-		val |= TC_CLK_CONTROL_ENABLE;
-		bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, val);
-	}
+	/*
+	 * Disable the drift servo and set the offset servo.
+	 * P 1/8 or 0x2000 and I 1/16 or 0x1000
+	 */
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVODRIFTFACTORP_REG, 0);
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVODRIFTFACTORI_REG, 0);
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVOOFFSETFACTORP_REG, 0x2000);
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVOOFFSETFACTORI_REG, 0x1000);
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, TC_CLK_CONTROL_SERVO_ADJ);
+	/* Disable and reenable AdjClk to clear old drift values */
+	if (bus_write_4(mres, sc->sc_clk_offset + TC_CLK_STATUSDRIFT_REG))
+		bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, 0);
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, TC_CLK_CONTROL_ENABLE);
 
 	/* select IIC or UART for MAC/clock communication */
 	if (timecard_iic_clock_enable)
