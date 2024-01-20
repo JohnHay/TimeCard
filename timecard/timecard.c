@@ -1821,7 +1821,9 @@ static void calcaging(struct timeCardInfo *tci)
 	tperiod = laststmp - prevstmp;
 	taging = lastpull - prevpull;
 	taging /= tperiod;
-	if (tci->pullbcnt > 4) {
+	if (tci->aging == 0.0) {
+		tci->aging = taging;
+	} else if (tci->pullbcnt > 8) {
 		tci->aging *= 9;
 		tci->aging += taging;
 		tci->aging /= 10;
