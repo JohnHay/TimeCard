@@ -1479,16 +1479,28 @@ timecard_init(struct timecard_softc *sc)
 	/*
 	 * Disable the drift servo and set the offset servo.
 	 * P 1/8 or 0x2000 and I 1/16 or 0x1000
+	 *
+	 * If the factors are updated and latched, a residue value can
+	 * sometimes stay in the TC_CLK_STATUSDRIFT_REG register. That will
+	 * then be applied for the rest of the time.
+	 *
+	 * To get around that, disable the PPS Slave to reset (disable/enable)
+	 * its internal values and select the register input for adjustments
+	 * and latch that in. Then put everything back.
 	 */
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, TC_CLK_CONTROL_ENABLE);
+
 	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVODRIFTFACTORP_REG, 0);
 	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVODRIFTFACTORI_REG, 0);
 	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVOOFFSETFACTORP_REG, 0x2000);
 	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SERVOOFFSETFACTORI_REG, 0x1000);
-	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, TC_CLK_CONTROL_SERVO_ADJ);
-	/* Disable and reenable AdjClk to clear old drift values */
-	if (bus_read_4(mres, sc->sc_clk_offset + TC_CLK_STATUSDRIFT_REG))
-		bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, 0);
-	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, TC_CLK_CONTROL_ENABLE);
+
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SELECT_REG, 254);
+	bus_write_4(mres, sc->sc_pps_slave_offset + TC_PPS_SLAVE_CONTROL_REG, 0);
+	val = TC_CLK_CONTROL_ENABLE | TC_CLK_CONTROL_DRIFT_ADJ | TC_CLK_CONTROL_SERVO_ADJ;
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_CONTROL_REG, val);
+	bus_write_4(mres, sc->sc_clk_offset + TC_CLK_SELECT_REG, 1);
+	bus_write_4(mres, sc->sc_pps_slave_offset + TC_PPS_SLAVE_CONTROL_REG, TC_PPS_SLAVE_CONTROL_ENABLE);
 
 	/* select IIC or UART for MAC/clock communication */
 	if (timecard_iic_clock_enable)
