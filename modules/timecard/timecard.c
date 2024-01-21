@@ -59,7 +59,7 @@
 #include <timecard_bus.h>
 #include <timecard_reg.h>
 
-#define TC_VERSION		0x00000004
+#define TC_VERSION		0x00000005
 
 struct timecard_corelist {
 	uint32_t cl_core;
