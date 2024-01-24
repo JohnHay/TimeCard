@@ -1023,7 +1023,8 @@ static int clearKernTime(struct timeCardInfo *tc)
 	struct timex tx;
 
 	memset(&tx, 0, sizeof(tx));
-	tx.modes = MOD_STATUS;
+	/* switch back to clkA */
+	tx.modes = MOD_STATUS | MOD_CLKA;
 	tx.status = 0;
 	return ntp_adjtime(&tx);
 }
