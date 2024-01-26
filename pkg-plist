@@ -17,3 +17,4 @@ man/man8/timecard.8.gz
 /boot/modules/axi_iic.ko
 /boot/modules/axi_spi_timecard.ko
 /boot/modules/uart_timecard.ko
+@kld /boot/modules
