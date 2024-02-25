@@ -1438,10 +1438,12 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
 	tci->train_stable = 0;
 	tci->train_stable_max = 2;
 	tci->train_stable_min = -2;
-	if (hotstart)
+	if (hotstart) {
 		tci->train_step = tci->train_step_max;
-	else
+		tci->train_stable = tci->train_stable_max;
+	} else {
 		tci->train_step = 9;
+	}
 	tci->train_count = tci->train_count_max / (1 << tci->train_step);
 
 	/* Probably a cold start, but with a driftfile */
@@ -1511,14 +1513,18 @@ static int train(struct timeCardInfo *tci)
 
 	if (tci->train_stable > tci->train_stable_max) {
 		tci->train_stable = tci->train_stable_max;
-		if (tci->train_step > tci->train_step_max)
+		if (tci->train_step > tci->train_step_max) {
 			tci->train_step--;
+			tci->train_stable = 0;
+		}
 		tci->train_count = tci->train_count_max / (1 << tci->train_step);
 	}
 	if (tci->train_stable < tci->train_stable_min) {
 		tci->train_stable = tci->train_stable_min;
-		if (tci->train_step < tci->train_step_min)
+		if (tci->train_step < tci->train_step_min) {
 			tci->train_step++;
+			tci->train_stable = 0;
+		}
 		tci->train_count = tci->train_count_max / (1 << tci->train_step);
 	}
 	tci->train_pull += tci->train_adj;
