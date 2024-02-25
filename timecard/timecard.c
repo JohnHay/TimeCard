@@ -1824,16 +1824,11 @@ static void calcaging(struct timeCardInfo *tci)
 	taging /= tperiod;
 	if (tci->aging == 0.0) {
 		tci->aging = taging;
-	} else if (tci->pullbcnt > 8) {
-		tci->aging *= 9;
-		tci->aging += taging;
-		tci->aging /= 10;
+	} else if (tci->pullbcnt > 20) {
+		tci->aging += ((taging - tci->aging) / (20 / 2));
 	} else {
-		tci->aging *= 3;
-		tci->aging += taging;
-		tci->aging /= 4;
+		tci->aging += ((taging - tci->aging) / (tci->pullbcnt / 2));
 	}
-
 	printf("Aging %e ns/s, avg %e, period %lu s, total over period %e, tadj %e\n",
 		    taging, tci->aging, tperiod, lastpull - prevpull, tci->train_adj);
 	fflush(stdout);
