@@ -145,7 +145,6 @@ axi_iic_attach(device_t dev)
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
-	//printf("axi_iic_attach: called\n");
 
 	sc->sc_rid = 0;
 	sc->sc_res_type = SYS_RES_MEMORY;
@@ -157,10 +156,8 @@ axi_iic_attach(device_t dev)
 	sc->sc_lowto = 1000000;
 	/* Soft reset */
 	bus_write_4(sc->sc_res, AXI_IIC_SRR_REG, IIC_SRR_RKEY);
-	/* usleep(10); *//* XXX Needed? */
 	/* max rx fifo, clear tx fifo and enable iic */
 	bus_write_4(sc->sc_res, AXI_IIC_RXPIRQ_REG, IIC_RXOCY_MASK);
-	//bus_write_4(sc->sc_res, AXI_IIC_RXPIRQ_REG, 13);
 	bus_write_4(sc->sc_res, AXI_IIC_CR_REG, IIC_CR_EN | IIC_CR_TX_FIFO_RESET);
 	bus_write_4(sc->sc_res, AXI_IIC_CR_REG, IIC_CR_EN);
 
@@ -182,7 +179,6 @@ axi_iic_attach(device_t dev)
 		return (ENXIO);
 	}
 	bus_generic_attach(dev);
-	//printf("bus_generic_attach() iicbus returned %d\n", err);
 	return (0);
 }
 
@@ -248,7 +244,6 @@ axi_iic_xfer(device_t dev, struct iic_msg *msgs, uint32_t num)
 
 	for (m = 0; m < num; m++) {
 
-		//addr = msgs[m].slave << 1;
 		addr = msgs[m].slave;
 		len = msgs[m].len;
 		buf = msgs[m].buf;
@@ -365,10 +360,8 @@ axi_iic_reset(device_t dev, u_char speed, u_char addr, u_char *oldaddr)
 	sc->sc_lowto = 1000000;
 	/* Soft reset */
 	bus_write_4(sc->sc_res, AXI_IIC_SRR_REG, IIC_SRR_RKEY);
-	/* usleep(10); *//* XXX Needed? */
 	/* max rx fifo, clear tx fifo and enable iic */
 	bus_write_4(sc->sc_res, AXI_IIC_RXPIRQ_REG, IIC_RXOCY_MASK);
-	//bus_write_4(sc->sc_res, AXI_IIC_RXPIRQ_REG, 13);
 	bus_write_4(sc->sc_res, AXI_IIC_CR_REG, IIC_CR_EN | IIC_CR_TX_FIFO_RESET);
 	bus_write_4(sc->sc_res, AXI_IIC_CR_REG, IIC_CR_EN);
 
