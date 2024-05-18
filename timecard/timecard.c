@@ -67,6 +67,7 @@
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
+#include <sys/sysctl.h>
 #include <sys/time.h>
 #include <sys/timex.h>
 #include <dev/iicbus/iic.h>
@@ -77,9 +78,15 @@
 #include "bme280.h"
 #endif
 
-/* Standard FreeBSD timecounter math introduces a small error. */
+/* If a timecounter uses a frequency of 1GHz the math introduces a small error. */
 #define FBSD_FREQ_ERR	(1.52588e-05)
-#define SCALE_FREQ	65536		/* frequency scale */
+#define FREQTOPPM(x)	((double)x / 65536)
+#define SCALE_FREQ	65536			/* frequency scale */
+#define STEP_THRESH	(2*1000*1000*1000)	/* Step if more than 2 seconds */
+
+#define MIN_SHIFT	0
+#define MAX_SHIFT	8
+#define MAX_STABLE	8
 
 #define DEVLEN			20	/* device name should not be longer */
 #define DEVPREF			"/dev/"
@@ -204,6 +211,8 @@ struct timeCardInfo {
 	struct axi_iic_info iic;
 	struct axi_iic_info iic_clk;
 
+	int enable_bindcpu;
+	int bindcpu;
 #ifdef USE_BME
 	int enable_bme;
 #endif
@@ -236,15 +245,15 @@ struct timeCardInfo {
 
 	time_t kernel_upd_tstmp;
 
-	int kern_loop;
-	int ntp_adj_init;
 	int64_t kernel_offset;
+	int ntpa_status;
 	long ntpa_offset;
+	long ntpa_freq;
+	long kern_fudge_freq;
 	int tai_offset;
 	int precision;
-	int kern_stable;
-	int kern_stable_cnt;
-	int kern_stepped;
+	int kern_shift;
+	int kern_shift_stbl;
 
 	int32_t drift_acc_total;
 	int32_t drift_acc_total_count;
@@ -342,11 +351,16 @@ static void driftfupdate(struct timeCardInfo *tci);
 
 /* -k (kernel sync), -b (bme env monitoring), -s (ntp shm), -c (clock sync) */
 void usage(void) {
+	printf("timecardd [-B cpuid] %s[-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n",
 #ifdef USE_BME
-	printf("timecardd [-b] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n");
-	printf("\t-b: enable bme environmental monitoring\n");
+	    "[-b] "
 #else
-	printf("timecardd [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n");
+	    ""
+#endif
+	    );
+	printf("\t-B cpuid: binf process to cpu\n");
+#ifdef USE_BME
+	printf("\t-b: enable bme environmental monitoring\n");
 #endif
 	printf("\t-c: enable clock monitoring\n");
 	printf("\t-d driftfile: file to periodically write the drift values, used to spead startup\n");
@@ -374,8 +388,12 @@ int main(int argc, char **argv)
 
 	tcInfo.train_use_offs = 1;
 
-	while((ch = getopt(argc, argv, "bcd:f:hkl:stv")) != -1)
+	while((ch = getopt(argc, argv, "B:bcd:f:hkl:stv")) != -1)
 		switch(ch) {
+		case 'B':
+			tcInfo.enable_bindcpu = 1;
+			tcInfo.bindcpu = strtol(optarg, NULL, 0);
+			break;
 		case 'b':
 			/* Silently do nothing if not defined. */
 #ifdef USE_BME
@@ -440,11 +458,12 @@ int main(int argc, char **argv)
 	tcInfo.term_action.sa_handler = termhandler;
 	sigemptyset (&tcInfo.term_action.sa_mask);
 	tcInfo.term_action.sa_flags = 0;
+	sigaction (SIGINT, &tcInfo.term_action, NULL);
 	sigaction (SIGTERM, &tcInfo.term_action, NULL);
 
-	/* XXX for now bind to cpu 0, so the same TSC is used. */
-	if (tcInfo.enable_kernel)
-		bind_cpu(0);
+	/* bind to cpu, so the same TSC is used. */
+	if (tcInfo.enable_bindcpu)
+		bind_cpu(tcInfo.bindcpu);
 
 	if (tcInfo.enable_shm) {
 		shm = getShmTime(0, 1);
@@ -757,21 +776,6 @@ static int captureTime(struct timeCardInfo *tci)
 	target = tci->tcardClk;
 	target.tv_sec -= tci->tai_offset;
 	tci->kernel_offset = timespecoffset(&target, &tci->rcvTstmp);
-	/* XXX Maybe find a better place? */
-	if ((tci->kernel_offset < 10) && (tci->kernel_offset > -10)) {
-		tci->kern_stable_cnt++;
-		if (tci->kern_stable_cnt > 60) {
-			tci->kern_stable_cnt = 60;
-			tci->kern_stable = 1;
-		}
-	} else {
-		tci->kern_stable_cnt--;
-		if (tci->kern_stable_cnt < 0) {
-			tci->kern_stable_cnt = 0;
-			tci->kern_stable = 0;
-		}
-	}
-
 	tci->precision = -25;	/* 2^precision. We are probably around 30ns. */
 	return err;
 }
@@ -873,9 +877,9 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 			break;
 		}
 		if (tci->enable_kernel &&
-		    (tci->kern_stepped == 0) &&
-		    ((tci->kernel_offset > (MAXPHASE / 3)) ||
-		    (tci->kernel_offset < -(MAXPHASE / 3)))) {
+		    (tci->status.kern_stepped == 0) &&
+		    ((tci->kernel_offset > STEP_THRESH) ||
+		    (tci->kernel_offset < -STEP_THRESH))) {
 			err = ioctl(tci->tcfd, TCIOCGETTIME, (caddr_t)&gt);
 			if (err) {
 				printf("TC_STEP ioctl error %d\n", err);
@@ -883,7 +887,7 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 			}
 			gt.card.tv_sec -= tci->tai_offset;
 			err = clock_settime(CLOCK_REALTIME, &gt.card);
-			tci->kern_stepped = 1;
+			tci->status.kern_stepped = 1;
 			err = 1; /* Give notice that time was stepped */
 			printf("Time stepped offset %jd to %lu.%09lu\n", tci->kernel_offset,
 			    gt.card.tv_sec, gt.card.tv_nsec);
@@ -1034,13 +1038,33 @@ static int clearKernTime(struct timeCardInfo *tc)
  * timer is set to now, so that future calls with a non zero offset
  * does not go in the FLL mode.
  */
-static int initKernTime(struct timeCardInfo *tc)
+static int initKernTime(struct timeCardInfo *tci)
 {
 	struct timex tx;
+	size_t len;
+	uint64_t tcfreq;
+
+	if (tci->kern_shift < MIN_SHIFT)
+		tci->kern_shift = MIN_SHIFT;
+
+	len = 8;
+	if (sysctlbyname("kern.timecounter.tc.TimeCard.frequency",
+	    &tcfreq, &len, NULL, 0) == -1) {
+		perror("sysctl");
+	}
+	if (tcfreq == 1000000000UL)
+		tci->kern_fudge_freq = (long)(FBSD_FREQ_ERR * SCALE_FREQ);
+	else
+		tci->kern_fudge_freq = 0;
+
+	/* write everything zero and clear STA_PLL also in the process */
+	memset(&tx, 0, sizeof(tx));
+	tx.modes = MOD_NANO | MOD_STATUS | MOD_OFFSET | MOD_FREQUENCY | MOD_TIMECONST | MOD_CLKB;
+	ntp_adjtime(&tx);
 
 	memset(&tx, 0, sizeof(tx));
 	tx.modes = MOD_NANO | MOD_STATUS | MOD_OFFSET | MOD_FREQUENCY | MOD_TIMECONST | MOD_CLKB;
-	tx.freq = (long)(FBSD_FREQ_ERR * SCALE_FREQ);
+	tx.freq = (long)tci->kern_fudge_freq;
 	tx.status = STA_PLL;
 	return ntp_adjtime(&tx);
 }
@@ -1048,44 +1072,30 @@ static int initKernTime(struct timeCardInfo *tc)
 static int updKernTime(struct timeCardInfo *tci)
 {
 	int err;
-	int64_t offset;
+	int64_t freq, offset;
 	struct timex tx;
 
 	memset(&tx, 0, sizeof(tx));
-	if (tci->kern_stable && ((tci->rcvTstmp.tv_sec - tci->kernel_upd_tstmp) < tci->kern_loop)) {
+	if ((tci->rcvTstmp.tv_sec - tci->kernel_upd_tstmp) < 1 << tci->kern_shift) {
 		tx.modes = MOD_NANO | MOD_CLKB;
 		err = ntp_adjtime(&tx);
 		tci->ntpa_offset = tx.offset;
-		return 0;
-	}
-	if (tci->ntp_adj_init < 2) {
-		tci->ntp_adj_init++;
-		initKernTime(tci);
+		tci->ntpa_freq = tx.freq;
+		tci->ntpa_status = tx.status;
 		return 0;
 	}
 
 	offset = tci->kernel_offset;
-	if (tci->kern_loop != 0)
-		offset /= tci->kern_loop;
+	freq = offset;
+	/* original scaling from ns/s to ppm -> freq = (nsps << 16) / 1000LL */
+	freq <<= 16 - (tci->kern_shift + 1);
+	if (freq > (MAXFREQ << 16))
+		freq = (MAXFREQ << 16);
+	if (freq < -(MAXFREQ << 16))
+		freq = -(MAXFREQ << 16);
+	freq += 500;
+	freq /= 1000;
 
-	if (offset > MAXPHASE)
-		offset = MAXPHASE - 3;
-	else if (offset < -MAXPHASE)
-		offset = -(MAXPHASE - 3);
-
-	/* XXX Test if we are stable and then get a big jump, if it is just popcorn. */
-	if (tci->kern_stable && ((offset > 10) || (offset < -10))) {
-		tx.modes = MOD_NANO | MOD_CLKB;
-		err = ntp_adjtime(&tx);
-		tci->ntpa_offset = tx.offset;
-		if (err < 0 || err > 5)
-			return err;
-		return 0;
-	}
-	tx.modes = MOD_NANO |
-	    MOD_STATUS | MOD_MAXERROR | MOD_ESTERROR |
-	    MOD_TIMECONST | MOD_CLKB;
-	tx.status = STA_PLL;
 	if (tci->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_VALID) {
 		if (tci->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_ANNOUNCE) {
 			if (tci->tod_utc_status & TC_TOD_UTC_STATUS_LEAP_61)
@@ -1094,38 +1104,42 @@ static int updKernTime(struct timeCardInfo *tci)
 				tx.status |= STA_DEL;
 		}
 	}
-#if 0
-	/* XXX Rework! */
-	/* Try to speed it up when we are far away */
-	if (offset >= MAXPHASE || offset <= -MAXPHASE)
-		tx.constant = 2;
-	else if (offset >= 100000 || offset <= -100000)
-		tx.constant = 3;
-	else
-		tx.constant = 4;
-#endif
+	if (offset == 0) {
+		tci->kern_shift_stbl++;
+		if (tci->kern_shift_stbl > MAX_STABLE) {
+			tci->kern_shift_stbl = MAX_STABLE;
+			if (tci->kern_shift < MAX_SHIFT) {
+				tci->kern_shift++;
+				tci->kern_shift_stbl = 0;
+			}
+		}
+	} else {
+		tci->kern_shift_stbl--;
+		if (tci->kern_shift_stbl < -MAX_STABLE) {
+			tci->kern_shift_stbl = -MAX_STABLE;
+			if (tci->kern_shift > MIN_SHIFT) {
+				tci->kern_shift--;
+				tci->kern_shift_stbl = 0;
+			}
+		}
+	}
 
-#if 0
-	if (offset >= 10000 || offset <= -10000)
-		tci->kern_loop = 1;
-	else
-#endif
-		tci->kern_loop = 4;
-	tx.constant = 0;
-#if 0
-	if (offset >= 10000 || offset <= -10000)
-		tx.constant = 4;
-	offset++;
-	offset -= 2000;
-	offset += (tx.constant + 1);
-#endif
+	tx.modes = MOD_NANO | MOD_STATUS | MOD_MAXERROR | MOD_ESTERROR |
+	    MOD_TIMECONST | MOD_CLKB;
+	tx.status = STA_PLL;
+	tx.constant = tci->kern_shift;
 	tx.modes |= MOD_OFFSET;
-	tx.offset = (long)offset;
-	tx.maxerror = 1;
-	tx.esterror = 1;
+	/* Handle the case of the kernel module running at 1GHz */
+	if (freq == 0 && tci->kern_fudge_freq != 0)
+		tx.freq = tci->kern_fudge_freq;
+	else
+		tx.freq = freq;
+	tx.modes |= MOD_FREQUENCY;
 	tci->kernel_upd_tstmp = tci->rcvTstmp.tv_sec;
 	err = ntp_adjtime(&tx);
 	tci->ntpa_offset = tx.offset;
+	tci->ntpa_freq = tx.freq;
+	tci->ntpa_status = tx.status;
 	if (err < 0 || err > 5)
 		return err;
 	return 0;
@@ -1379,6 +1393,8 @@ static int logstats(struct timeCardInfo *tci)
 	    tci->status.state, tci->status.time_valid);
 	fprintf(tci->logf, " K % 2jd % 2ld", tci->kernel_offset,
 	    tci->ntpa_offset);
+	fprintf(tci->logf, " %.4g %d", FREQTOPPM(tci->ntpa_freq),
+	    tci->kern_shift);
 #ifdef SHOW_TSC
 	fprintf(tci->logf, " %ju %2d", tci->difftsc, tci->cpuid);
 #endif
