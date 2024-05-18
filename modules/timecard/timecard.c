@@ -59,7 +59,7 @@
 #include <timecard_bus.h>
 #include <timecard_reg.h>
 
-#define TC_VERSION		0x00000005
+#define TC_VERSION		0x00000006
 
 struct timecard_corelist {
 	uint32_t cl_core;
@@ -608,6 +608,10 @@ SYSCTL_DECL(_hw_timecard);
 SYSCTL_NODE(_hw, OID_AUTO, timecard, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "timecard(x) driver configuration");
 
+static int timecard_kern_fudge_freq_enable = 1;
+SYSCTL_INT(_hw_timecard, OID_AUTO, kern_fudge_freq, CTLFLAG_RDTUN,
+    &timecard_kern_fudge_freq_enable, 0, "Use 2^32 frequency for the timecounter");
+
 static int timecard_iic_clock_enable = 1;
 SYSCTL_INT(_hw_timecard, OID_AUTO, iic_clock, CTLFLAG_RDTUN,
     &timecard_iic_clock_enable, 0, "Use the IIC instead of UART to the MAC");
@@ -819,17 +823,30 @@ timecard_read_time(struct timecard_softc *sc, struct timespec *ts, uint64_t *tsc
 	return (error);
 }
 
+#define NSINSEC			1000000000L
+#define TC_FUDGE_WIDTH		32
+#define TC_FUDGE_FREQ		(1UL << TC_FUDGE_WIDTH)
+#define TC_FUDGE_GUARD_BITS	30
+
 static u_int
 timecard_get_timecount(struct timecounter *tc)
 {
 	u_int cntr;
 	struct timecard_softc *sc = tc->tc_priv;
 	struct timespec ts;
-	uint64_t tsc;
+	uint64_t tsc, tnval;
 
 	timecard_read_time(sc, &ts, &tsc);
-	cntr = ts.tv_sec * 1000000000L;
-	cntr += ts.tv_nsec;
+	if (timecard_kern_fudge_freq_enable) {
+		tnval = (1UL << (TC_FUDGE_WIDTH + TC_FUDGE_GUARD_BITS)) / NSINSEC;
+		tnval *= ts.tv_nsec;
+		tnval += 1UL << (TC_FUDGE_GUARD_BITS - 1);
+		tnval >>= TC_FUDGE_GUARD_BITS;
+		cntr = tnval;
+	} else {
+		cntr = ts.tv_sec * NSINSEC;
+		cntr += ts.tv_nsec;
+	}
 	sc->sc_ts_count++;
 	sc->sc_ts_tmp = ts;
 	sc->sc_tsc_tmp = tsc;
@@ -1524,7 +1541,7 @@ timecard_pps_ifltr(void *arg)
 	if (sc->sc_pps_remove_jitter && sc->sc_st_bits.clk_in_sync &&
 	    timecounter == &sc->sc_tc) {
 		sc->sc_pps_jitter = sc->sc_prev_nsec;
-		sc->sc_pps_state.capcount = sc->sc_prev_sec * 1000000000L;
+		sc->sc_pps_state.capcount = sc->sc_prev_sec * NSINSEC;
 	}
 	return (FILTER_SCHEDULE_THREAD);
 }
@@ -1722,8 +1739,13 @@ timecard_attach(device_t dev)
 
 	/* Initialize timecounter */
 	sc->sc_tc.tc_get_timecount = timecard_get_timecount;
-	sc->sc_tc.tc_counter_mask = ~0u;
-	sc->sc_tc.tc_frequency = 1000000000;
+	if (timecard_kern_fudge_freq_enable) {
+		sc->sc_tc.tc_counter_mask = (1UL << TC_FUDGE_WIDTH) - 1;
+		sc->sc_tc.tc_frequency = TC_FUDGE_FREQ;
+	} else {
+		sc->sc_tc.tc_counter_mask = ~0u;
+		sc->sc_tc.tc_frequency = NSINSEC;
+	}
 	sc->sc_tc.tc_name = "TimeCard";
 	sc->sc_tc.tc_quality = 500;
 	sc->sc_tc.tc_flags = TC_FLAGS_SUSPEND_SAFE; /* True? */
