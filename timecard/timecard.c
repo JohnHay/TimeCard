@@ -102,23 +102,23 @@
 
 /* Register definitions of the SiT5721 DCOCXO */
 #define SIT_ADDR		0x60
-#define XO_PART_NUMBER		0x50	// 256 byte ascii
-#define XO_NOM_FREQ		0x52	// 32 byte ascii, nominal frequency
-#define XO_SERIAL_NUMBER	0x56	// 32 byte ascii, lot and serial number
-#define XO_FAB_DATE		0x57	// 32 byte ascii
-#define XO_PULL_VALUE		0x61    // 32 bit float fractional offset
-#define XO_PULL_RANGE		0x62    // 32 bit float fractional offset
-#define XO_AGE_COMP		0x63    // 32 bit float fraction / second
-#define XO_RAMP_RATE		0x64    // 32 bit float fraction / second (abs)
-#define XO_UPTIME		0xa0	// 32 bit uint seconds
-#define XO_TEMP			0xa1    // 32 bit float resonator temperature, C
-#define XO_VOLTAGE		0xa3    // 32 bit float supply voltage, V
-#define XO_OFFSET		0xab    // 32 bit float total offset written
-#define XO_HEATER_POWER		0xa7    // 32 bit float heater power, Watt
-#define XO_STATUS		0xae    // 32 bit uint error status flag, 7 is ok
-#define XO_STABILITY		0xaf	// 32 bit uint, 1 when stable
-#define XO_TARGET_POWER		0xb1    // 32 bit float power target, Watt
-#define XO_STATUS_CLEAR		0xe1	// write 0x64, 0x01 to clear status
+#define XO_PART_NUMBER		0x50	/* 256 byte ascii */
+#define XO_NOM_FREQ		0x52	/* 32 byte ascii, nominal frequency */
+#define XO_SERIAL_NUMBER	0x56	/* 32 byte ascii, lot and serial number */
+#define XO_FAB_DATE		0x57	/* 32 byte ascii */
+#define XO_PULL_VALUE		0x61    /* 32 bit float fractional offset */
+#define XO_PULL_RANGE		0x62    /* 32 bit float fractional offset */
+#define XO_AGE_COMP		0x63    /* 32 bit float fraction / second */
+#define XO_RAMP_RATE		0x64    /* 32 bit float fraction / second (abs) */
+#define XO_UPTIME		0xa0	/* 32 bit uint seconds */
+#define XO_TEMP			0xa1    /* 32 bit float resonator temperature, C */
+#define XO_VOLTAGE		0xa3    /* 32 bit float supply voltage, V */
+#define XO_OFFSET		0xab    /* 32 bit float total offset written */
+#define XO_HEATER_POWER		0xa7    /* 32 bit float heater power, Watt */
+#define XO_STATUS		0xae    /* 32 bit uint error status flag, 7 is ok */
+#define XO_STABILITY		0xaf	/* 32 bit uint, 1 when stable */
+#define XO_TARGET_POWER		0xb1    /* 32 bit float power target, Watt */
+#define XO_STATUS_CLEAR		0xe1	/* write 0x64, 0x01 to clear status */
 
 /* From ntpd/refclock_shm.c */
 
@@ -227,8 +227,8 @@ struct timeCardInfo {
 	char *tcdevname;
 	int tcfd;
 
-	struct timespec tcardClk;	// time from time card
-	struct timespec rcvTstmp;	// OS time at tcardClk
+	struct timespec tcardClk;	/* time from time card */
+	struct timespec rcvTstmp;	/* OS time at tcardClk */
 	uint64_t tsc;
 	uint64_t difftsc;
 	u_int cpuid;
@@ -275,7 +275,7 @@ struct timeCardInfo {
 	float train_adj;
 	float train_pull;
 
-	FILE *logf;			// log file descriptor
+	FILE *logf;			/* log file descriptor */
 	char *logfname;
 	char *driftfname;
 	time_t nextdriftf;
@@ -287,14 +287,14 @@ struct timeCardInfo {
 	float xo_power;
 
 	float aging;			/* Aging ns/s */
-	float dfaging;			// aging read from / to driftfile
-	float dfoffset;			// offset read from / to driftfile
+	float dfaging;			/* aging read from / to driftfile */
+	float dfoffset;			/* offset read from / to driftfile */
 
 	int32_t pullbindx;	/* last entry / next to be overwritten */
 	int32_t pullbcnt;	/* number of entries */
 
 	uint8_t serialno[6];
-	char serialnotxt[18];		// Format 12:34:56:78:90:AB + null
+	char serialnotxt[18];		/* Format 12:34:56:78:90:AB + null */
 #ifdef USE_BME
 	double bme_temperature;
 	double bme_pressure;
