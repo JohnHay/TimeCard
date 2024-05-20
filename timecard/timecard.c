@@ -358,7 +358,7 @@ void usage(void) {
 	    ""
 #endif
 	    );
-	printf("\t-B cpuid: binf process to cpu\n");
+	printf("\t-B cpuid: bind process to cpu\n");
 #ifdef USE_BME
 	printf("\t-b: enable bme environmental monitoring\n");
 #endif
