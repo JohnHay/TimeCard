@@ -1829,7 +1829,7 @@ static void calcaging(struct timeCardInfo *tci)
 {
 	float lastpull, prevpull, taging;
 	time_t laststmp, prevstmp, tperiod;
-	int32_t count, driftoff,  indx, total_count;
+	int32_t div, driftoff,  indx;
 
 	pullstatsadd(tci);
 	if (tci->pullbcnt == 1) {
@@ -1847,13 +1847,17 @@ static void calcaging(struct timeCardInfo *tci)
 	tperiod = laststmp - prevstmp;
 	taging = lastpull - prevpull;
 	taging /= tperiod;
-	if (tci->aging == 0.0) {
+	div = tci->pullbcnt;
+	if (div > 80)
+		div = 80;
+	div /= 2;
+	if (div == 0)
+		div = 1;
+	/* prime the first time */
+	if (tci->aging == 0.0)
 		tci->aging = taging;
-	} else if (tci->pullbcnt > 20) {
-		tci->aging += ((taging - tci->aging) / (20 / 2));
-	} else {
-		tci->aging += ((taging - tci->aging) / (tci->pullbcnt / 2));
-	}
+	tci->aging += ((taging - tci->aging) / div);
+
 	printf("Aging %e ns/s, avg %e, period %lu s, total over period %e, tadj %e\n",
 		    taging, tci->aging, tperiod, lastpull - prevpull, tci->train_adj);
 	fflush(stdout);
