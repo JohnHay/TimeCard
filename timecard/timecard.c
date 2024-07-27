@@ -78,17 +78,26 @@
 #include "bme280.h"
 #endif
 
+#define STEP_THRESH	(2*1000*1000*1000)	/* Step if more than 2 seconds */
+#define SECONDSPERDAY	(24 * 60 * 60)
+
 /* If a timecounter uses a frequency of 1GHz the math introduces a small error. */
 #define FBSD_FREQ_ERR	(1.52588e-05)
-#define FREQTOPPM(x)	((double)x / 65536)
 #define SCALE_FREQ	65536			/* frequency scale */
-#define STEP_THRESH	(2*1000*1000*1000)	/* Step if more than 2 seconds */
+#define FREQTOPPM(x)	((double)x / SCALE_FREQ)
 
-#define MIN_SHIFT	0
-#define MAX_SHIFT	8
-#define MAX_STABLE	8
+#define TRAIN_PERIOD		180		/* 3 minutes for now */
+#define TRAIN_TOTAL_FRAC	2		/* shift fraction of offset_acc_total to add */
+#define TRAIN_STABLE		(TRAIN_PERIOD / 8)	/* less than a 8th of TRAIN_PERIOD in ns */
+#define MAX_TRAIN_SHIFT		3
+#define MIN_TRAIN_SHIFT		0
+#define MAX_TRAIN_STABLE	2
 
-#define DEVLEN			20	/* device name should not be longer */
+#define MIN_KERN_SHIFT		0
+#define MAX_KERN_SHIFT		8
+#define MAX_KERN_STABLE		8
+
+#define DEVLEN			20		/* device name should not be longer */
 #define DEVPREF			"/dev/"
 #define DEFAULTDEV		"timecard0"
 #define DEFAULTIICDEV		"iic0"
@@ -263,17 +272,16 @@ struct timeCardInfo {
 	int32_t offset_acc_total_count;
 	int32_t offset_acc;
 	int32_t offset_acc_count;
-	int32_t train_use_offs;
-	int32_t train_count_max;
-	int32_t train_count;
-	int32_t train_step_max;
-	int32_t train_step_min;
-	int32_t train_step;
+
+	int32_t train_shift_max;
+	int32_t train_shift_min;
+	int32_t train_shift;
 	int32_t train_stable_max;
 	int32_t train_stable_min;
 	int32_t train_stable;
 	float train_adj;
 	float train_pull;
+	time_t nexttrain;
 
 	FILE *logf;			/* log file descriptor */
 	char *logfname;
@@ -292,6 +300,7 @@ struct timeCardInfo {
 
 	int32_t pullbindx;	/* last entry / next to be overwritten */
 	int32_t pullbcnt;	/* number of entries */
+	time_t nextaging;
 
 	uint8_t serialno[6];
 	char serialnotxt[18];		/* Format 12:34:56:78:90:AB + null */
@@ -385,8 +394,6 @@ int main(int argc, char **argv)
 #ifdef USE_BME
 	tcInfo.enable_bme = 1;
 #endif
-
-	tcInfo.train_use_offs = 1;
 
 	while((ch = getopt(argc, argv, "B:bcd:f:hkl:stv")) != -1)
 		switch(ch) {
@@ -501,11 +508,13 @@ int main(int argc, char **argv)
 		if (tcInfo.driftfname != NULL)
 			readdriftfile(&tcInfo);
 		xo_init(&tcInfo);
+		tcInfo.nexttrain = now.tv_sec + TRAIN_PERIOD;
 		train_init(&tcInfo, hotstart);
 	}
 
 	/* update drift file every 3 hours */
 	tcInfo.nextdriftf = now.tv_sec + (3 * 60 * 60);
+	tcInfo.nextaging = now.tv_sec + (3 * 60 * 60);
 
 #ifdef USE_BME
 	if (tcInfo.enable_bme)
@@ -541,8 +550,8 @@ int main(int argc, char **argv)
 		logstats(&tcInfo);
 
 		if (tcInfo.enable_clock && tcInfo.enable_training && tcInfo.status.time_valid) {
-			if (train(&tcInfo))
-				calcaging(&tcInfo);
+			train(&tcInfo);
+			calcaging(&tcInfo);
 			xo_update(&tcInfo);
 			driftfupdate(&tcInfo);
 		}
@@ -927,8 +936,11 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 		break;
 	case TC_SYNC:
 		if (vitals_ok) {
-			if (st->time_valid == 0)
+			if (st->time_valid == 0) {
 				st->time_valid = 1;
+				if (tcInfo.enable_training)
+					train_reset(tci);
+			}
 			break;
 		}
 		/* If GNSS lost fix, but card still INSYNC, disable pps_slave,
@@ -1044,8 +1056,8 @@ static int initKernTime(struct timeCardInfo *tci)
 	size_t len;
 	uint64_t tcfreq;
 
-	if (tci->kern_shift < MIN_SHIFT)
-		tci->kern_shift = MIN_SHIFT;
+	if (tci->kern_shift < MIN_KERN_SHIFT)
+		tci->kern_shift = MIN_KERN_SHIFT;
 
 	len = 8;
 	if (sysctlbyname("kern.timecounter.tc.TimeCard.frequency",
@@ -1106,18 +1118,18 @@ static int updKernTime(struct timeCardInfo *tci)
 	}
 	if (offset == 0) {
 		tci->kern_shift_stbl++;
-		if (tci->kern_shift_stbl > MAX_STABLE) {
-			tci->kern_shift_stbl = MAX_STABLE;
-			if (tci->kern_shift < MAX_SHIFT) {
+		if (tci->kern_shift_stbl > MAX_KERN_STABLE) {
+			tci->kern_shift_stbl = MAX_KERN_STABLE;
+			if (tci->kern_shift < MAX_KERN_SHIFT) {
 				tci->kern_shift++;
 				tci->kern_shift_stbl = 0;
 			}
 		}
 	} else {
 		tci->kern_shift_stbl--;
-		if (tci->kern_shift_stbl < -MAX_STABLE) {
-			tci->kern_shift_stbl = -MAX_STABLE;
-			if (tci->kern_shift > MIN_SHIFT) {
+		if (tci->kern_shift_stbl < -MAX_KERN_STABLE) {
+			tci->kern_shift_stbl = -MAX_KERN_STABLE;
+			if (tci->kern_shift > MIN_KERN_SHIFT) {
 				tci->kern_shift--;
 				tci->kern_shift_stbl = 0;
 			}
@@ -1409,28 +1421,16 @@ static int logstats(struct timeCardInfo *tci)
 		    tci->bme_pressure,
 		    tci->bme_humidity);
 #endif
-	if (tci->enable_training && (tci->train_use_offs == 0))
-		fprintf(tci->logf, " TR %d %d %d %d %e %d %d %e %e",
-		    tci->drift_acc_total,
-		    tci->drift_acc_total_count,
-		    tci->drift_acc,
-		    tci->drift_acc_count,
-		    tci->train_adj,
-		    tci->train_step,
-		    tci->train_stable,
-		    tci->aging,
-		    tci->xo_pull);
-	if (tci->enable_training && tci->train_use_offs)
-		fprintf(tci->logf, " TR %d %d %d %d %e %d %d %e %e",
-		    tci->offset_acc_total,
-		    tci->offset_acc_total_count,
-		    tci->offset_acc,
-		    tci->offset_acc_count,
-		    tci->train_adj,
-		    tci->train_step,
-		    tci->train_stable,
-		    tci->aging,
-		    tci->xo_pull);
+	fprintf(tci->logf, " TR %d %d %d %d %e %d %d %e %e",
+	    tci->offset_acc_total,
+	    tci->offset_acc_total_count,
+	    tci->offset_acc,
+	    tci->offset_acc_count,
+	    tci->train_adj,
+	    tci->train_shift,
+	    tci->train_stable,
+	    tci->aging,
+	    tci->xo_pull);
 	fprintf(tci->logf, "\n");
 	fflush(tci->logf);
 	return 0;
@@ -1451,19 +1451,13 @@ static void timespec_sub(struct timespec *_v1, struct timespec *_v2,
 static int train_init(struct timeCardInfo *tci, int hotstart)
 {
 	int cold = 0;
-	tci->train_count_max = 24*60*60;	/* 1 day for now */
-	tci->train_step_max = 0;
-	tci->train_step_min = 10;
+
 	tci->train_stable = 0;
-	tci->train_stable_max = 2;
-	tci->train_stable_min = -2;
-	if (hotstart) {
-		tci->train_step = tci->train_step_max;
-		tci->train_stable = tci->train_stable_max;
-	} else {
-		tci->train_step = 9;
-	}
-	tci->train_count = tci->train_count_max / (1 << tci->train_step);
+	tci->train_stable_max = MAX_TRAIN_STABLE;
+	tci->train_stable_min = -MAX_TRAIN_STABLE;
+	tci->train_shift_max = MAX_TRAIN_SHIFT;
+	tci->train_shift_min = MIN_TRAIN_SHIFT;
+	tci->train_shift = tci->train_shift_min;
 
 	/* Probably a cold start, but with a driftfile */
 	if (tci->xo_offset == 0.0 && (tci->dfaging != 0.0 || tci->dfoffset != 0.0)) {
@@ -1502,50 +1496,47 @@ static int train_reset(struct timeCardInfo *tci)
 	tci->offset_acc_count = 0;
 	tci->offset_acc = 0;
 
+	tci->nexttrain = tci->rcvTstmp.tv_sec + TRAIN_PERIOD;
+
 	return 0;
 }
 
 static int train(struct timeCardInfo *tci)
 {
-	if (tci->train_use_offs) {
-		if (tci->offset_acc_count < tci->train_count)
-			return 0;
-		tci->train_adj = tci->offset_acc;
-		tci->train_adj /= tci->offset_acc_count;
-		tci->train_adj *= 1.0E-9;
-	} else {
-		if (tci->drift_acc_count < tci->train_count)
-			return 0;
-		tci->train_adj = tci->drift_acc;
-		tci->train_adj /= tci->drift_acc_count;
-		tci->train_adj *= 1.0E-9;
-	}
+	int32_t offset = 0;
 
-	/*
-	 * Increase stability if within +- 7.5E-10
-	 * Decrease stability if outside +- 1.25E-9
-	 */
-	if ((tci->train_adj > -7.5E-10) && (tci->train_adj < 7.5E-10))
+	if (tci->nexttrain > tci->rcvTstmp.tv_sec)
+		return 0;
+
+	if (tci->offset_acc_total >= 0)
+		offset = (tci->offset_acc_total + (1 << (TRAIN_TOTAL_FRAC - 1))) >> TRAIN_TOTAL_FRAC;
+	else
+		offset = (tci->offset_acc_total - (1 << (TRAIN_TOTAL_FRAC - 1))) >> TRAIN_TOTAL_FRAC;
+
+	if ((tci->offset_acc < TRAIN_STABLE) && (tci->offset_acc > -TRAIN_STABLE))
 		tci->train_stable++;
-	else if ((tci->train_adj < -1.25E-9) || (tci->train_adj > 1.25E-9))
+	else if ((tci->offset_acc > ((TRAIN_STABLE * 3) / 2)) || (tci->offset_acc < -((TRAIN_STABLE * 3) / 2)))
 		tci->train_stable--;
-
 	if (tci->train_stable > tci->train_stable_max) {
 		tci->train_stable = tci->train_stable_max;
-		if (tci->train_step > tci->train_step_max) {
-			tci->train_step--;
+		if (tci->train_shift < tci->train_shift_max) {
+			tci->train_shift++;
 			tci->train_stable = 0;
 		}
-		tci->train_count = tci->train_count_max / (1 << tci->train_step);
 	}
 	if (tci->train_stable < tci->train_stable_min) {
 		tci->train_stable = tci->train_stable_min;
-		if (tci->train_step < tci->train_step_min) {
-			tci->train_step++;
+		if (tci->train_shift > tci->train_shift_min) {
+			tci->train_shift--;
 			tci->train_stable = 0;
 		}
-		tci->train_count = tci->train_count_max / (1 << tci->train_step);
 	}
+
+	tci->train_adj = tci->offset_acc;
+	tci->train_adj /= TRAIN_PERIOD << tci->train_shift;
+	tci->train_adj += (float)offset / (TRAIN_PERIOD << (tci->train_shift / 2));
+	tci->train_adj *= 1.0E-9;
+
 	tci->train_pull += tci->train_adj;
 
 	tci->drift_acc_count = 0;
@@ -1553,11 +1544,9 @@ static int train(struct timeCardInfo *tci)
 	tci->offset_acc_count = 0;
 	tci->offset_acc = 0;
 
-	/* Let calcaging know we are at max step */
-	if (tci->train_step == tci->train_step_max)
-		return 1;
-	else
-		return 0;
+	tci->nexttrain = tci->rcvTstmp.tv_sec + TRAIN_PERIOD;
+
+	return 1;
 }
 
 /*
@@ -1822,8 +1811,7 @@ static int32_t pullstatindx(struct timeCardInfo *tci, int32_t _off)
 }
 
 /*
- * We are called after a train() session when train_step == train_step_max,
- * so basically once a day, synchronous with train().
+ * We are called once per second after train().
  */
 static void calcaging(struct timeCardInfo *tci)
 {
@@ -1831,8 +1819,11 @@ static void calcaging(struct timeCardInfo *tci)
 	time_t laststmp, prevstmp, tperiod;
 	int32_t div, driftoff,  indx;
 
+	if (tci->nextaging > tci->rcvTstmp.tv_sec)
+		return;
 	pullstatsadd(tci);
 	if (tci->pullbcnt == 1) {
+		tci->nextaging += SECONDSPERDAY;
 		printf("First pull sample %lu\n", tci->rcvTstmp.tv_sec);
 		fflush(stdout);
 		return;
@@ -1857,7 +1848,7 @@ static void calcaging(struct timeCardInfo *tci)
 	if (tci->aging == 0.0)
 		tci->aging = taging;
 	tci->aging += ((taging - tci->aging) / div);
-
+	tci->nextaging += SECONDSPERDAY;
 	printf("Aging %e ns/s, avg %e, period %lu s, total over period %e, tadj %e\n",
 		    taging, tci->aging, tperiod, lastpull - prevpull, tci->train_adj);
 	fflush(stdout);
