@@ -89,14 +89,12 @@
 #define TRAIN_PERIOD		180		/* 3 minutes for now */
 #define TRAIN_TOTAL_FRAC	2		/* shift fraction of offset_acc_total to add */
 #define TRAIN_STABLE		(TRAIN_PERIOD / 10)	/* less than a 10th of TRAIN_PERIOD in ns */
-//#define MAX_TRAIN_SHIFT		3
+
 #define MAX_TRAIN_SHIFT		1
 #define MIN_TRAIN_SHIFT		0
 #define MAX_TRAIN_STABLE	2
 
 #define TEMP_COMP_CNT	30
-//#define TEMP_COMP_CNT	20
-//#define TEMP_COMP_CNT	15
 
 #define MIN_KERN_SHIFT		0
 #define MAX_KERN_SHIFT		8
@@ -289,7 +287,6 @@ struct timeCardInfo {
 	int32_t train_shift_min;
 	int32_t train_shift;
 	int32_t train_stable_max;
-//	int32_t train_stable_min;
 	int32_t train_stable;
 	float train_adj;
 	float train_pull;
@@ -450,7 +447,6 @@ int main(int argc, char **argv)
 			tcInfo.enable_shm = 1;
 			break;
 		case 'T':
-			//tcInfo.train_use_total_offset = 1;
 			parse_train_arg(&tcInfo, optarg);
 			break;
 		case 't':
@@ -1567,18 +1563,13 @@ static int temp_comp_init(struct timeCardInfo *tci)
 			return 0;
 		}
 	}
-#if 1
+
 	tci->xo_power_cnt = TEMP_COMP_CNT - 1;
 	tci->xo_power_acc = tci->xo_power * tci->xo_power_cnt;
-
 	retv =  temp_comp(tci);
-
 	printf("temp_comp_init, xo_power %.4f, comp %.5e\n",
 	    tci->xo_power, tci->temp_comp);
 	return retv;
-#else
-	return 0;
-#endif
 }
 
 static int temp_comp(struct timeCardInfo *tci)
@@ -1603,7 +1594,6 @@ static int temp_comp(struct timeCardInfo *tci)
 	comp *= tci->temp_comp_fact;
 	comp *= 1.0E-9;
 	tci->temp_comp = comp;
-
 	return 0;
 }
 
@@ -1635,7 +1625,6 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
 	/* XXX Is checking for 0 the best way? */
 	if (tci->train_shift_min == 0)
 		tci->train_shift_min = MIN_TRAIN_SHIFT;
-//	tci->train_shift = tci->train_shift_min + 1;
 	tci->train_shift = MIN_TRAIN_SHIFT + 1;
 	if (tci->train_shift < tci->train_shift_min)
 		tci->train_shift = tci->train_shift_min;
@@ -1701,12 +1690,6 @@ static int train(struct timeCardInfo *tci)
 		else
 			offset_lt = (tci->offset_acc_total - (1 << (TRAIN_TOTAL_FRAC - 1))) >> TRAIN_TOTAL_FRAC;
 		offset = tci->offset_acc;
-#if 0
-		if ((offset < tci->train_stable_val) && (offset > -tci->train_stable_val))
-			tci->train_stable++;
-		else if ((offset > ((tci->train_stable_val * 3) / 2)) || (offset < -((tci->train_stable_val * 3) / 2)))
-			tci->train_stable--;
-#endif
 	}
 	if ((offset < tci->train_stable_val) && (offset > -tci->train_stable_val))
 		tci->train_stable++;
