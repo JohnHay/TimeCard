@@ -88,7 +88,7 @@
 
 #define TRAIN_PERIOD		180		/* 3 minutes for now */
 #define TRAIN_TOTAL_FRAC	2		/* shift fraction of offset_acc_total to add */
-#define TRAIN_STABLE		(TRAIN_PERIOD / 8)	/* less than a 8th of TRAIN_PERIOD in ns */
+#define TRAIN_STABLE		(TRAIN_PERIOD / 10)	/* less than a 10th of TRAIN_PERIOD in ns */
 //#define MAX_TRAIN_SHIFT		3
 #define MAX_TRAIN_SHIFT		1
 #define MIN_TRAIN_SHIFT		0
@@ -279,11 +279,14 @@ struct timeCardInfo {
 	int32_t offset_acc;
 	int32_t offset_acc_count;
 
+	int train_use_total_offset;
+	int32_t train_period;
+	int32_t train_stable_val;
 	int32_t train_shift_max;
 	int32_t train_shift_min;
 	int32_t train_shift;
 	int32_t train_stable_max;
-	int32_t train_stable_min;
+//	int32_t train_stable_min;
 	int32_t train_stable;
 	float train_adj;
 	float train_pull;
@@ -336,6 +339,7 @@ void bind_cpu(unsigned int cpunr);
 
 static int findiicdevs(struct timeCardInfo *tci);
 static int parse_temp_comp_arg(struct timeCardInfo *tci, char *argstr);
+static int parse_train_arg(struct timeCardInfo *tci, char *argstr);
 static int initdevs(struct timeCardInfo *tci);
 static int readdriftfile(struct timeCardInfo *tci);
 static int captureTime(struct timeCardInfo *tcInfo);
@@ -368,7 +372,7 @@ static void calcaging(struct timeCardInfo *tci);
 static void driftfupdate(struct timeCardInfo *tci);
 
 void usage(void) {
-	printf("timecardd [-B cpuid] %s[-C refv,mult] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n",
+	printf("timecardd [-B cpuid] %s[-C refv,mult] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-T period,min_shift,max_shift,stable] [-t] [-v]\n",
 #ifdef USE_BME
 	    "[-b] "
 #else
@@ -387,6 +391,7 @@ void usage(void) {
 	printf("\t-k: enable kernel synchronisation\n");
 	printf("\t-l logfile: file to write logs, HUP will close and reopen it\n");
 	printf("\t-s: enable ntp shm shared memory interface\n");
+	printf("\t-T period,shift,stable: set the period (s), min, max shift (bits) and stable (ns) for training\n");
 	printf("\t-t: enable clock training\n");
 	printf("\t-v: verbose\n\n");
 	printf("\tdriftfile is optional and used to speed up subsequent clock convergence\n");
@@ -404,7 +409,7 @@ int main(int argc, char **argv)
 	tcInfo.enable_bme = 1;
 #endif
 
-	while((ch = getopt(argc, argv, "B:bC:cd:f:hkl:stv")) != -1)
+	while((ch = getopt(argc, argv, "B:bC:cd:f:hkl:sT:tv")) != -1)
 		switch(ch) {
 		case 'B':
 			tcInfo.enable_bindcpu = 1;
@@ -440,6 +445,10 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			tcInfo.enable_shm = 1;
+			break;
+		case 'T':
+			//tcInfo.train_use_total_offset = 1;
+			parse_train_arg(&tcInfo, optarg);
 			break;
 		case 't':
 			tcInfo.enable_training = 1;
@@ -523,7 +532,7 @@ int main(int argc, char **argv)
 		xo_stats(&tcInfo);
 		if (tcInfo.enable_clock_temp_comp)
 			temp_comp_init(&tcInfo);
-		tcInfo.nexttrain = now.tv_sec + TRAIN_PERIOD;
+		tcInfo.nexttrain = now.tv_sec + tcInfo.train_period;
 		if (tcInfo.enable_training || tcInfo.enable_clock_temp_comp)
 			train_init(&tcInfo, hotstart);
 	}
@@ -720,6 +729,53 @@ int parse_temp_comp_arg(struct timeCardInfo *tci, char *argstr)
 			retv = 1;
 		}
 	}
+	return retv;
+}
+
+/*
+ * Expect a string period,shift,stable
+ * Where all are positive integers.
+ * period is the period in seconds at which traing happens. Default TRAIN_PERIOD.
+ * shift is the number of steps if the frequency stays stable. Default MAX_TRAIN_SHIFT.
+ * stable is the limit of stability in ns. Default TRAIN_STABLE.
+ */
+static int parse_train_arg(struct timeCardInfo *tci, char *argstr)
+{
+	int i, retv = 0;
+        char *nxtp, *endp;
+	uint32_t period = 0, minshift = 0, maxshift = 0, stable = 0, tval = 0;
+
+	nxtp = argstr;
+	for (i = 0; i < 4; i++) {
+		tval = strtoul(nxtp, &endp, 0);
+		if (nxtp == endp)
+			return 0;
+		switch (i) {
+		case 0:
+			period = tval;
+			break;
+		case 1:
+			minshift = tval;
+			break;
+		case 2:
+			maxshift = tval;
+			break;
+		case 3:
+			stable = tval;
+			break;
+		}
+		if (*endp == '\0')
+			break;
+		if (*endp != ',' && *endp != ' ')
+			return 0;
+		nxtp = endp + 1;
+	}
+	tci->train_period = period;
+	tci->train_shift_min = minshift;
+	tci->train_shift_max = maxshift;
+	tci->train_stable_val = stable;
+	printf("Setting train period %u, shift_min %u, shift_max %u, stable_val %u\n",
+	    period, minshift, maxshift, stable);
 	return retv;
 }
 
@@ -1560,12 +1616,24 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
 {
 	int cold = 0;
 
+	if (tci->train_period == 0)
+		tci->train_period = TRAIN_PERIOD;
+	if (tci->train_stable_val == 0)
+		tci->train_stable_val = TRAIN_STABLE;
 	tci->train_stable = 0;
-	tci->train_stable_max = MAX_TRAIN_STABLE;
-	tci->train_stable_min = -MAX_TRAIN_STABLE;
-	tci->train_shift_max = MAX_TRAIN_SHIFT;
-	tci->train_shift_min = MIN_TRAIN_SHIFT;
-	tci->train_shift = tci->train_shift_min;
+	if (tci->train_stable_max == 0)
+		tci->train_stable_max = MAX_TRAIN_STABLE;
+	if (tci->train_shift_max == 0)
+		tci->train_shift_max = MAX_TRAIN_SHIFT;
+	/* XXX Is checking for 0 the best way? */
+	if (tci->train_shift_min == 0)
+		tci->train_shift_min = MIN_TRAIN_SHIFT;
+//	tci->train_shift = tci->train_shift_min + 1;
+	tci->train_shift = MIN_TRAIN_SHIFT + 1;
+	if (tci->train_shift < tci->train_shift_min)
+		tci->train_shift = tci->train_shift_min;
+	if (tci->train_shift > tci->train_shift_max)
+		tci->train_shift = tci->train_shift_max;
 
 	/* Probably a cold start, but with a driftfile */
 	if (tci->xo_offset == 0.0 && (tci->dfaging != 0.0 || tci->dfoffset != 0.0)) {
@@ -1606,27 +1674,40 @@ static int train_reset(struct timeCardInfo *tci)
 	tci->offset_acc_count = 0;
 	tci->offset_acc = 0;
 
-	tci->nexttrain = tci->rcvTstmp.tv_sec + TRAIN_PERIOD;
+	tci->nexttrain = tci->rcvTstmp.tv_sec + tci->train_period;
 
 	return 0;
 }
 
 static int train(struct timeCardInfo *tci)
 {
-	int32_t offset = 0;
+	int32_t offset = 0, offset_lt = 0;
 
 	if (tci->nexttrain > tci->rcvTstmp.tv_sec)
 		return 0;
 
-	if (tci->offset_acc_total >= 0)
-		offset = (tci->offset_acc_total + (1 << (TRAIN_TOTAL_FRAC - 1))) >> TRAIN_TOTAL_FRAC;
-	else
-		offset = (tci->offset_acc_total - (1 << (TRAIN_TOTAL_FRAC - 1))) >> TRAIN_TOTAL_FRAC;
-
-	if ((tci->offset_acc < TRAIN_STABLE) && (tci->offset_acc > -TRAIN_STABLE))
+	if (tci->train_use_total_offset) {
+		offset = tci->offset_acc_total;
+	} else {
+		if (tci->offset_acc_total >= 0)
+			offset_lt = (tci->offset_acc_total + (1 << (TRAIN_TOTAL_FRAC - 1))) >> TRAIN_TOTAL_FRAC;
+		else
+			offset_lt = (tci->offset_acc_total - (1 << (TRAIN_TOTAL_FRAC - 1))) >> TRAIN_TOTAL_FRAC;
+		offset = tci->offset_acc;
+#if 0
+		if ((offset < tci->train_stable_val) && (offset > -tci->train_stable_val))
+			tci->train_stable++;
+		else if ((offset > ((tci->train_stable_val * 3) / 2)) || (offset < -((tci->train_stable_val * 3) / 2)))
+			tci->train_stable--;
+#endif
+	}
+	if ((offset < tci->train_stable_val) && (offset > -tci->train_stable_val))
 		tci->train_stable++;
-	else if ((tci->offset_acc > ((TRAIN_STABLE * 3) / 2)) || (tci->offset_acc < -((TRAIN_STABLE * 3) / 2)))
-		tci->train_stable--;
+	else if ((offset > ((tci->train_stable_val * 3) / 2)) || (offset < -((tci->train_stable_val * 3) / 2)))
+		tci->train_stable = -tci->train_stable_max - 1;
+	else
+			tci->train_stable--;
+
 	if (tci->train_stable > tci->train_stable_max) {
 		tci->train_stable = tci->train_stable_max;
 		if (tci->train_shift < tci->train_shift_max) {
@@ -1634,19 +1715,24 @@ static int train(struct timeCardInfo *tci)
 			tci->train_stable = 0;
 		}
 	}
-	if (tci->train_stable < tci->train_stable_min) {
-		tci->train_stable = tci->train_stable_min;
+	if (tci->train_stable < -tci->train_stable_max) {
+		tci->train_stable = -tci->train_stable_max;
 		if (tci->train_shift > tci->train_shift_min) {
 			tci->train_shift--;
 			tci->train_stable = 0;
 		}
 	}
 
-	tci->train_adj = tci->offset_acc;
-	tci->train_adj /= TRAIN_PERIOD << tci->train_shift;
-	tci->train_adj += (float)offset / (TRAIN_PERIOD << (tci->train_shift / 2));
-	tci->train_adj *= 1.0E-9;
+	if (tci->train_use_total_offset) {
+		tci->train_adj = offset;
+		tci->train_adj /= tci->train_period << tci->train_shift;
+	} else {
+		tci->train_adj = offset;
+		tci->train_adj /= tci->train_period << tci->train_shift;
+		tci->train_adj += (float)offset_lt / (tci->train_period << (tci->train_shift / 2));
+	}
 
+	tci->train_adj *= 1.0E-9;
 	tci->train_pull += tci->train_adj;
 
 	tci->drift_acc_count = 0;
@@ -1654,7 +1740,7 @@ static int train(struct timeCardInfo *tci)
 	tci->offset_acc_count = 0;
 	tci->offset_acc = 0;
 
-	tci->nexttrain = tci->rcvTstmp.tv_sec + TRAIN_PERIOD;
+	tci->nexttrain = tci->rcvTstmp.tv_sec + tci->train_period;
 
 	return 1;
 }
