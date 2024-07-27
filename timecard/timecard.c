@@ -1102,7 +1102,7 @@ static struct shmTime *getShmTime(int unit, int/*BOOL*/ forall)
 
 static inline void memory_barrier(void)
 {
-    atomic_thread_fence(memory_order_seq_cst);
+	atomic_thread_fence(memory_order_seq_cst);
 }
 
 static int updShmTime(struct timeCardInfo *tci)
@@ -1136,10 +1136,11 @@ static int updShmTime(struct timeCardInfo *tci)
 		tci->shm->leap = LEAP_NOTINSYNC;
 	}
 	tci->shm->precision = tci->precision;
-
 	memory_barrier();
 
 	tci->shm->count++;
+	memory_barrier();
+
 	tci->shm->valid = 1;
 
 	return 0;
