@@ -26,7 +26,7 @@
 .\"
 .\" Note: The date here should be updated whenever a non-trivial
 .\" change is made to the manual page.
-.Dd January 1, 2024
+.Dd July 26, 2024
 .Dt TIMECARD 8
 .Os
 .Sh NAME
@@ -34,12 +34,17 @@
 .Nd "synchronise kernel time and provide ntpd(8) with time using an OCP TAP TimeCard"
 .Sh SYNOPSIS
 .Nm
-.Op Fl bc
+.Op Fl B Ar cpuid
+.Op Fl b
+.Op Fl C Ar refv,mult
+.Op Fl c
 .Op Fl d Ar driftfile
 .Op Fl f Ar /dev/timecardN
 .Op Fl hk
 .Op Fl l Ar logfile
-.Op Fl stv
+.Op Fl s
+.Op Fl T Ar period,min_shift,max_shift,stable
+.Op Fl tv
 .Sh DESCRIPTION
 The
 .Nm
@@ -56,8 +61,12 @@ Clock interface.
 .Pp
 The options are as follows:
 .Bl -tag -width "-d /dev/timecardN"
+.It Fl B Ar cpuid
+Bind process to cpu.
 .It Fl b
 Enable BME monitoring, if it is compiled in.
+.It Fl C Ar refv,mult
+Enable clock temperature compensation. The refererence voltage (refv) and multiplier (mult) are floats.
 .It Fl c
 Enable TimeCard clock monitoring.
 .It Fl d Ar driftfile
@@ -79,6 +88,9 @@ Enable kernel synchronisation.
 The logfile to use for per second logs. If not specified, none will be used.
 .It Fl s
 Enable ntp shm shared memory interface.
+.It Fl T Ar period,min_shift,max_shift,stable
+Set the period (s), min, max shift (bits) and stable (ns) for training.
+The defaults are 180,0,1,18.
 .It Fl t
 Enable clock training (disciplining).
 .It Fl v
@@ -95,9 +107,12 @@ will sit in a loop and once a second:
 .It update the kernel time using Xr ntp_adjtime 2
 .It read the Xr timecard 4 clock information
 .It write the logfile
+.It calculate Xr timecard 4 temperature compensation
 .It calculate Xr timecard 4 clock disciplining / training
 .It calculate Xr timecard 4 clock aging
-.It update Xr timecard 4 clock pull and aging daily once settled
+.It update Xr timecard 4 clock pull to compensate for temperature changes
+.It update Xr timecard 4 clock pull every training period
+.It update Xr timecard 4 clock aging daily once settled
 .It update the driftfile (hourly if it changed)
 .El
 .Pp
