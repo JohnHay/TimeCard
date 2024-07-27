@@ -89,9 +89,14 @@
 #define TRAIN_PERIOD		180		/* 3 minutes for now */
 #define TRAIN_TOTAL_FRAC	2		/* shift fraction of offset_acc_total to add */
 #define TRAIN_STABLE		(TRAIN_PERIOD / 8)	/* less than a 8th of TRAIN_PERIOD in ns */
-#define MAX_TRAIN_SHIFT		3
+//#define MAX_TRAIN_SHIFT		3
+#define MAX_TRAIN_SHIFT		1
 #define MIN_TRAIN_SHIFT		0
 #define MAX_TRAIN_STABLE	2
+
+#define TEMP_COMP_CNT	30
+//#define TEMP_COMP_CNT	20
+//#define TEMP_COMP_CNT	15
 
 #define MIN_KERN_SHIFT		0
 #define MAX_KERN_SHIFT		8
@@ -226,6 +231,7 @@ struct timeCardInfo {
 	int enable_bme;
 #endif
 	int enable_clock;
+	int enable_clock_temp_comp;
 	int enable_kernel;
 	int enable_shm;
 	int enable_training;
@@ -293,6 +299,13 @@ struct timeCardInfo {
 	float xo_offset;
 	float xo_aging;
 	float xo_power;
+	float xo_power_acc;
+	float xo_power_min;
+	float xo_power_max;
+	float xo_power_ref;
+	float temp_comp_fact;
+	float temp_comp;
+	int xo_power_cnt;
 
 	float aging;			/* Aging ns/s */
 	float dfaging;			/* aging read from / to driftfile */
@@ -322,6 +335,7 @@ static void termhandler(int _val);
 void bind_cpu(unsigned int cpunr);
 
 static int findiicdevs(struct timeCardInfo *tci);
+static int parse_temp_comp_arg(struct timeCardInfo *tci, char *argstr);
 static int initdevs(struct timeCardInfo *tci);
 static int readdriftfile(struct timeCardInfo *tci);
 static int captureTime(struct timeCardInfo *tcInfo);
@@ -342,6 +356,8 @@ static int read_bme280(struct timeCardInfo *tci);
 static int logstats(struct timeCardInfo *tcInfo);
 static void timespec_sub(struct timespec *_v1, struct timespec *_v2,
     struct timespec *_result);
+static int temp_comp_init(struct timeCardInfo *tci);
+static int temp_comp(struct timeCardInfo *tci);
 static int train_init(struct timeCardInfo *tci, int hotstart);
 static int train_reset(struct timeCardInfo *tci);
 static int train(struct timeCardInfo *tci);
@@ -351,16 +367,8 @@ static int xo_update(struct timeCardInfo *tci);
 static void calcaging(struct timeCardInfo *tci);
 static void driftfupdate(struct timeCardInfo *tci);
 
-/********************************************************************/
-/*
- * ? enable / disable servo
- * ? enable / disable training
- */
-/********************************************************************/
-
-/* -k (kernel sync), -b (bme env monitoring), -s (ntp shm), -c (clock sync) */
 void usage(void) {
-	printf("timecardd [-B cpuid] %s[-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n",
+	printf("timecardd [-B cpuid] %s[-C refv,mult] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-t] [-v]\n",
 #ifdef USE_BME
 	    "[-b] "
 #else
@@ -371,6 +379,7 @@ void usage(void) {
 #ifdef USE_BME
 	printf("\t-b: enable bme environmental monitoring\n");
 #endif
+	printf("\t-C refv,mult: enable clock temperature compensation. Refv and mult are floats.\n");
 	printf("\t-c: enable clock monitoring\n");
 	printf("\t-d driftfile: file to periodically write the drift values, used to spead startup\n");
 	printf("\t-f timecard device: default /dev/timecard0\n");
@@ -395,7 +404,7 @@ int main(int argc, char **argv)
 	tcInfo.enable_bme = 1;
 #endif
 
-	while((ch = getopt(argc, argv, "B:bcd:f:hkl:stv")) != -1)
+	while((ch = getopt(argc, argv, "B:bC:cd:f:hkl:stv")) != -1)
 		switch(ch) {
 		case 'B':
 			tcInfo.enable_bindcpu = 1;
@@ -406,6 +415,9 @@ int main(int argc, char **argv)
 #ifdef USE_BME
 			tcInfo.enable_bme = 0;
 #endif
+			break;
+		case 'C':
+			tcInfo.enable_clock_temp_comp = parse_temp_comp_arg(&tcInfo, optarg);
 			break;
 		case 'c':
 			tcInfo.enable_clock = 1;
@@ -508,8 +520,12 @@ int main(int argc, char **argv)
 		if (tcInfo.driftfname != NULL)
 			readdriftfile(&tcInfo);
 		xo_init(&tcInfo);
+		xo_stats(&tcInfo);
+		if (tcInfo.enable_clock_temp_comp)
+			temp_comp_init(&tcInfo);
 		tcInfo.nexttrain = now.tv_sec + TRAIN_PERIOD;
-		train_init(&tcInfo, hotstart);
+		if (tcInfo.enable_training || tcInfo.enable_clock_temp_comp)
+			train_init(&tcInfo, hotstart);
 	}
 
 	/* update drift file every 3 hours */
@@ -526,6 +542,9 @@ int main(int argc, char **argv)
 	if (verbose)
 		printf("Starting loop %lu.%09lu\n", now.tv_sec, now.tv_nsec);
 
+	if (verbose && tcInfo.enable_clock_temp_comp)
+		printf("clock temperature compensation enabled, using reference %fW and multiplier %f\n",
+			tcInfo.xo_power_ref, tcInfo.temp_comp_fact);
 	fflush(stdout);
 
 	while(1) {
@@ -549,12 +568,19 @@ int main(int argc, char **argv)
 #endif
 		logstats(&tcInfo);
 
+		if (tcInfo.enable_clock && tcInfo.enable_clock_temp_comp)
+			temp_comp(&tcInfo);
 		if (tcInfo.enable_clock && tcInfo.enable_training && tcInfo.status.time_valid) {
 			train(&tcInfo);
 			calcaging(&tcInfo);
-			xo_update(&tcInfo);
-			driftfupdate(&tcInfo);
 		}
+		if (tcInfo.enable_clock && (tcInfo.enable_training ||
+		  tcInfo.enable_clock_temp_comp))
+			xo_update(&tcInfo);
+
+		if (tcInfo.driftfname != NULL)
+			driftfupdate(&tcInfo);
+
 		if (need_to_die)
 			break;
 		clock_gettime(CLOCK_REALTIME, &now);
@@ -669,6 +695,32 @@ static int findiicdevs(struct timeCardInfo *tci)
 	if (foundiic && foundiicclk)
 		return 0;
 	return 1;
+}
+
+/*
+ * expect to floats seperated with a comma ',' or space ' ', eg. "0.92,2.4".
+ */
+int parse_temp_comp_arg(struct timeCardInfo *tci, char *argstr)
+{
+        char *nxtp, *endp;
+	int retv = 0;
+	float a = 0, b = 0;
+
+	/* hardcode for now */
+	tci->xo_power_min = 0.3;
+	tci->xo_power_max = 1.2;
+
+	a = strtof(argstr, &nxtp);
+	if (nxtp != argstr && (*nxtp == ',' || *nxtp == ' ')) {
+		nxtp++;
+		b = strtof(nxtp, &endp);
+		if (nxtp != endp) {
+			tci->xo_power_ref = a;
+			tci->temp_comp_fact = b;
+			retv = 1;
+		}
+	}
+	return retv;
 }
 
 static int initdevs(struct timeCardInfo *tci)
@@ -1411,8 +1463,9 @@ static int logstats(struct timeCardInfo *tci)
 	fprintf(tci->logf, " %ju %2d", tci->difftsc, tci->cpuid);
 #endif
 	if (tci->enable_clock)
-		fprintf(tci->logf, " XO %.5e %.4f %u %u",
+		fprintf(tci->logf, " XO %.5e %.4f %.5e %u %u",
 		    tci->xo_offset, tci->xo_power,
+		    tci->temp_comp,
 		    tci->iic_clk.iicerrcnt, tci->iic_clk.iicffcnt);
 #ifdef USE_BME
 	if (tci->enable_bme)
@@ -1433,6 +1486,61 @@ static int logstats(struct timeCardInfo *tci)
 	    tci->xo_pull);
 	fprintf(tci->logf, "\n");
 	fflush(tci->logf);
+	return 0;
+}
+
+/*
+ * prime the system
+ */
+static int temp_comp_init(struct timeCardInfo *tci)
+{
+	int retv;
+	if ((tci->xo_power < tci->xo_power_min) ||
+	    (tci->xo_power > tci->xo_power_max)) {
+		if (tci->xo_power_ref != 0.0) {
+			tci->xo_power = tci->xo_power_ref;
+		} else {
+			tci->temp_comp = 0.0;
+			return 0;
+		}
+	}
+#if 1
+	tci->xo_power_cnt = TEMP_COMP_CNT - 1;
+	tci->xo_power_acc = tci->xo_power * tci->xo_power_cnt;
+
+	retv =  temp_comp(tci);
+
+	printf("temp_comp_init, xo_power %.4f, comp %.5e\n",
+	    tci->xo_power, tci->temp_comp);
+	return retv;
+#else
+	return 0;
+#endif
+}
+
+static int temp_comp(struct timeCardInfo *tci)
+{
+	float comp;
+	int i;
+
+	if ((tci->xo_power < tci->xo_power_min) ||
+	    (tci->xo_power > tci->xo_power_max)) {
+		tci->temp_comp = 0.0;
+		return 0;
+	}
+	tci->xo_power_acc += tci->xo_power;
+	tci->xo_power_cnt++;
+	if (tci->xo_power_cnt < TEMP_COMP_CNT)
+		return 0;
+	comp = tci->xo_power_acc / tci->xo_power_cnt;
+	tci->xo_power_acc = 0;
+	tci->xo_power_cnt = 0;
+
+	comp -= tci->xo_power_ref;
+	comp *= tci->temp_comp_fact;
+	comp *= 1.0E-9;
+	tci->temp_comp = comp;
+
 	return 0;
 }
 
@@ -1473,6 +1581,8 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
 			tci->aging = tci->dfaging;
 		tci->train_pull = tci->xo_pull;
 	}
+	if (tcInfo.enable_clock_temp_comp && tci->train_pull != 0.0)
+		tci->train_pull -= tci->temp_comp;
 	if (tci->aging != 0.0 || tci->train_pull != 0.0)
 		printf("Aging %e ns/s, pull %e s, %s start\n",
 		    tci->aging, tci->train_pull, cold ? "cold": "warm");
@@ -1735,12 +1845,9 @@ static int xo_init(struct timeCardInfo *tci)
 static int xo_update(struct timeCardInfo *tci)
 {
 	int err = 0;
+	float total_pull = tci->temp_comp + tci->train_pull;
+
 	struct axi_iic_info *iic = &tci->iic_clk;
-#ifdef MANUAL_AGING
-	if (tci->manualaging) {
-		tci->train_pull += tci->aging;
-	}
-#else
 	if (tci->xo_aging != tci->aging) {
 		wrI2CfloatR(iic, SIT_ADDR, XO_AGE_COMP, tci->aging);
 		tci->xo_aging = rdI2CfloatR(iic, SIT_ADDR, XO_AGE_COMP, tci->aging, 0.0);
@@ -1749,13 +1856,12 @@ static int xo_update(struct timeCardInfo *tci)
 			printf("xo_update: XO_AGE_COMP, expected %e, read %e\n", tci->aging, tci->xo_aging);
 		}
 	}
-#endif
-	if (tci->xo_pull != tci->train_pull) {
-		wrI2CfloatR(iic, SIT_ADDR, XO_PULL_VALUE, tci->train_pull);
-		tci->xo_pull = rdI2CfloatR(iic, SIT_ADDR, XO_PULL_VALUE, tci->train_pull, 0.0);
-		if (tci->xo_pull != tci->train_pull) {
+	if (tci->xo_pull != total_pull) {
+		wrI2CfloatR(iic, SIT_ADDR, XO_PULL_VALUE, total_pull);
+		tci->xo_pull = rdI2CfloatR(iic, SIT_ADDR, XO_PULL_VALUE, total_pull, 0.0);
+		if (tci->xo_pull != total_pull) {
 			/* XXX What should be done? */
-			printf("xo_update: XO_PULL_VALUE, expected %e, read %e\n", tci->train_pull, tci->xo_pull);
+			printf("xo_update: XO_PULL_VALUE, expected %e, read %e\n", total_pull, tci->xo_pull);
 		}
 	}
 	return err;
