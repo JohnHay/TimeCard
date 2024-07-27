@@ -113,6 +113,8 @@
 /* Used for sanity checks */
 #define XO_PULL_MAX		10.0E-6		/* default (10ppm) */
 #define XO_AGING_MAX		10.0E-14	/* ns/s */
+#define XO_POWER_MIN		0.3
+#define XO_POWER_MAX		1.2
 
 /* Register definitions of the SiT5721 DCOCXO */
 #define SIT_ADDR		0x60
@@ -715,9 +717,8 @@ int parse_temp_comp_arg(struct timeCardInfo *tci, char *argstr)
 	int retv = 0;
 	float a = 0, b = 0;
 
-	/* hardcode for now */
-	tci->xo_power_min = 0.3;
-	tci->xo_power_max = 1.2;
+	tci->xo_power_min = XO_POWER_MIN;
+	tci->xo_power_max = XO_POWER_MAX;
 
 	a = strtof(argstr, &nxtp);
 	if (nxtp != argstr && (*nxtp == ',' || *nxtp == ' ')) {
