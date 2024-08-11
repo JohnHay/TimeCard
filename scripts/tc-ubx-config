@@ -28,6 +28,14 @@
 #
 # update yearly
 # CFG-NAVSPG-WKNROLLOVER
+#
+# set the cable delay:
+# Delay in LMR-195 4.17ns/m, and RG58 4.18-4.8ns/m
+# value in ns
+# tc-ubx-config -z CFG-TP-ANT_CABLEDELAY,500
+#
+# get the cable delay:
+# tc-ubx-config -g CFG-TP-ANT_CABLEDELAY
 
 PROGNAME=$0
 dev=""
