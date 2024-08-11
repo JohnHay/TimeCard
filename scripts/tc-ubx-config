@@ -108,13 +108,14 @@ weekroll()
 
 usage()
 {
-	echo "usage ${PROGNAME} [-b <baud-rate>] [-c] [-d <uart-device>] [-h] [-w] [ubxtool commands]" >&2
+	echo "usage ${PROGNAME} [-b <baud-rate>] [-c] [-d <uart-device>] [-h] [-w] [-- ubxtool commands]" >&2
 	echo "   -b baud-rate: default is 115200" >&2
 	echo "   -c : configure GNSS receiver for TimeCard use" >&2
 	echo "   -d uart-device: if not specified will try to find it" >&2
 	echo "   -h : this help" >&2
 	echo "   -w : update the GPS rollover week" >&2
-	echo "   A new NEO M9N default to 38400 baud" >&2
+	echo "   -- : send the rest of the arguments to ubxtool" >&2
+	echo "   Note: A new NEO M9N default to 38400 baud" >&2
 	exit 1
 }
 
@@ -140,9 +141,12 @@ while [ $# -gt 0 ]; do
 		week=1
 		cmd=""
 		;;
-	*)
-		#usage
+	--)
 		break
+		;;
+	*)
+		usage
+		exit 1
 		;;
 	esac
 done
@@ -151,7 +155,7 @@ if [ -z "${dev}" ]; then
 	dev="/dev/cuau${devi}"
 fi
 if [ -z "${ubxtool}" ]; then
-	echo "Could not find ubxtool" >&2
+	echo "Could not find ubxtool. It is part of the gpsd/gpsd-nox11 port/package." >&2
 	exit 1
 fi
 if [ \! -c ${dev} ]; then
@@ -169,6 +173,6 @@ if [ ${week} -eq 1 ]; then
 	weekroll
 fi
 
-if [ -n "${cmd}" ]; then
-	ubxtool ${cmd} $*
+if [ "${cmd}" = "--" ]; then
+	ubxtool $*
 fi
