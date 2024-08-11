@@ -1210,7 +1210,7 @@ static int updKernTime(struct timeCardInfo *tci)
 	offset = tci->kernel_offset_acc;
 	freq = offset;
 	/* original scaling from ns/s to ppm -> freq = (nsps << 16) / 1000LL */
-	freq <<= 16 - tci->kern_shift;
+	freq <<= 16 - (tci->kern_shift + 1);
 	if (freq > (MAXFREQ << 16))
 		freq = (MAXFREQ << 16);
 	if (freq < -(MAXFREQ << 16))
