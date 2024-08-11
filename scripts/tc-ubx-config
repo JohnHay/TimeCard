@@ -119,6 +119,10 @@ usage()
 	exit 1
 }
 
+if [ $# -eq 0 ]; then
+	usage
+	exit 1
+fi
 while [ $# -gt 0 ]; do
 	cmd=$1
 	shift
