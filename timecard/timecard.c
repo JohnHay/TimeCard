@@ -1017,7 +1017,13 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 	case TC_LOSTSYNC:
 	case TC_LOSTFIX:
 		if (vitals_ok) {
-			st->count = 5;
+			/*
+			 * Move the next aging calculation at least a day in the
+			 * future after we lost fix/sync
+			 */
+			if (tci->nextaging < (tci->rcvTstmp.tv_sec + SECONDSPERDAY))
+				tci->nextaging += SECONDSPERDAY;
+			st->count = 3*60; /* Give FPGA servos time to settle */
 			st->state = TC_PRESYNC;
 			break;
 		}
