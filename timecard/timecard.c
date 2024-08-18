@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2023 John Hay
+ * Copyright (c) 2024 John Hay
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -329,6 +329,7 @@ struct timeCardInfo {
 	struct sigaction term_action;
 };
 
+static char *pname;
 static struct timeCardInfo tcInfo;
 static volatile sig_atomic_t need_freopen;
 static volatile sig_atomic_t need_to_die;
@@ -372,7 +373,8 @@ static void calcaging(struct timeCardInfo *tci);
 static void driftfupdate(struct timeCardInfo *tci);
 
 void usage(void) {
-	printf("timecardd [-B cpuid] %s[-C refv,mult] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-T period,min_shift,max_shift,stable] [-t] [-v]\n",
+	printf("usage: %s [-B cpuid] %s[-C refv,mult] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-T period,min_shift,max_shift,stable] [-t] [-v]\n",
+	    pname,
 #ifdef USE_BME
 	    "[-b] "
 #else
@@ -404,6 +406,8 @@ int main(int argc, char **argv)
 	int ch, err, hotstart = 0, verbose = 0;
 	struct timespec now, nextup, tsleep;
 	struct shmTime volatile* shm;
+
+	pname = argv[0];
 
 #ifdef USE_BME
 	tcInfo.enable_bme = 1;

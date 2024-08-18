@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2023 John Hay
+ * Copyright (c) 2024 John Hay
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -131,13 +131,14 @@ static int spi_transfer(struct spi_softc *sc, struct spi_command *cmd);
 #define	SPI_IPIER	0x28		/* IP interrupt enable register */
 
 int verbose;
+char *pname;
 struct spi_softc spisc;
 struct mx25l_softc mx25sc;
 
 void *pcie_base, *virt_addr;
 unsigned mapped_size;
 
-void usage(char *pname) {
+void usage(void) {
 	printf("%s [-d <device>] [-i] [-r] [-f <file>] [-o <offset>] [-p <pcie-addr>] [-v] [-V]\n", pname);
 	printf("\t-o offset - is normally either 0, for Factory image, or 0x00400000 for updates.\n");
 	printf("\t-d - /dev/spigenn.n\n");
@@ -157,6 +158,8 @@ int main(int argc, char**argv) {
 	struct spi_softc *spsc = &spisc;
 	struct mx25l_softc *mxsc = &mx25sc;
     
+	pname = argv[0];
+
 	while((ch = getopt(argc, argv, "d:f:ip:o:rvV")) != -1)
 		switch(ch) {
 		case 'd':
@@ -177,7 +180,7 @@ int main(int argc, char**argv) {
 		case 'p':
 			if (strlen(optarg) != 10) {
 				printf("PCIe Base Address must have following format: -p 0xA0000000\n");
-				usage(argv[0]);
+				usage();
 			}
 			target = (off_t)strtol(optarg, NULL, 0);
 			break;
@@ -189,13 +192,13 @@ int main(int argc, char**argv) {
 			break;
 		}
 	if(optind < argc)
-		usage(argv[0]);
+		usage();
 	spsc->spidev = -1;
 	if (target == 0) {
 		int fd = open(dname, O_RDWR);
 		if (fd == -1) {
 			printf("Could not open %s\n\n", dname);
-			usage(argv[0]);
+			usage();
 		}
 		spsc->spidev = fd;
 	}
@@ -208,10 +211,10 @@ int main(int argc, char**argv) {
 			    dname, fname, fl_offset);
 	}
 	if ((target == 0) && (spsc->spidev == -1))
-		usage(argv[0]);
+		usage();
 	if ((identify == 0) && (fname == NULL)) {
 		printf("-i %d, fname %s\n", identify, fname);
-		usage(argv[0]);
+		usage();
 	}
 
 	if (target) {

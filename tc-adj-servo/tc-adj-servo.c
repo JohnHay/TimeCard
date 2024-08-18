@@ -38,10 +38,12 @@
 #include <timecard.h>
 #include <timecard_reg.h>
 
+static char *pname;
+
 static int pps_servo_enable(int fd, int enable);
 
 void usage(void) {
-	printf("usage: tst-servo [-d [-p Kp] [-i Ki]] [-o [-p Kp] [-i Ki]]\n");
+	printf("usage: %s [-d [-p Kp] [-i Ki]] [-o [-p Kp] [-i Ki]]\n", pname);
 	exit(1);
 }
 
@@ -52,6 +54,8 @@ int main(int argc, char **argv)
 	int gotdKp = 0, gotdKi = 0, gotoKp = 0, gotoKi = 0;
 	uint32_t dKp, dKi, oKp, oKi;
 	struct timecard_control gc;
+
+	pname = argv[0];
 
 	while((ch = getopt(argc, argv, "di:op:")) != -1)
 		switch(ch) {
