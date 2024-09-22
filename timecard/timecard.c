@@ -1221,10 +1221,15 @@ static int updKernTime(struct timeCardInfo *tci)
 	freq = offset;
 	/* original scaling from ns/s to ppm -> freq = (nsps << 16) / 1000LL */
 	freq <<= 16 - (tci->kern_shift + 1);
-	if (freq > (MAXFREQ << 16))
+	/* If freq has to be clipped, also shrink kern_shift. */
+	if (freq > (MAXFREQ << 16)) {
 		freq = (MAXFREQ << 16);
-	if (freq < -(MAXFREQ << 16))
+		tci->kern_shift = MIN_KERN_SHIFT;
+	}
+	if (freq < -(MAXFREQ << 16)) {
 		freq = -(MAXFREQ << 16);
+		tci->kern_shift = MIN_KERN_SHIFT;
+	}
 	freq += 500;
 	freq /= 1000;
 
