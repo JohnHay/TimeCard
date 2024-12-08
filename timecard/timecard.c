@@ -262,6 +262,7 @@ struct timeCardInfo {
 
 	int64_t kernel_offset;
 	int64_t kernel_offset_acc;
+	int kernel_offset_nz_count;
 	int ntpa_status;
 	long ntpa_offset;
 	long ntpa_freq;
@@ -895,6 +896,8 @@ static int captureTime(struct timeCardInfo *tci)
 	target = tci->tcardClk;
 	target.tv_sec -= tci->tai_offset;
 	tci->kernel_offset = timespecoffset(&target, &tci->rcvTstmp);
+	if (tci->kernel_offset)
+		tci->kernel_offset_nz_count++;
 	tci->kernel_offset_acc += tci->kernel_offset;
 	tci->precision = -25;	/* 2^precision. We are probably around 30ns. */
 	return err;
@@ -1212,13 +1215,18 @@ static int updKernTime(struct timeCardInfo *tci)
 		tci->ntpa_offset = tx.offset;
 		tci->ntpa_freq = tx.freq;
 		tci->ntpa_status = tx.status;
-		if (tci->kern_shift && ((tci->rcvTstmp.tv_sec - tci->kernel_upd_tstmp) < 1 << (tci->kern_shift - 1)))
+		if (tci->kern_shift && ((tci->rcvTstmp.tv_sec - tci->kernel_upd_tstmp) < 1 << (tci->kern_shift - 1))) {
 			tci->kernel_offset_acc = 0;
+			tci->kernel_offset_nz_count = 0;
+		}
 		return 0;
 	}
 
 	offset = tci->kernel_offset_acc;
 	freq = offset;
+	/* Ignore single events */
+	if ((tci->kernel_offset_nz_count == 1) && (tci->kern_shift != MIN_KERN_SHIFT))
+		freq = 0;
 	/* original scaling from ns/s to ppm -> freq = (nsps << 16) / 1000LL */
 	freq <<= 16 - (tci->kern_shift + 1);
 	/* If freq has to be clipped, also shrink kern_shift. */
@@ -1278,6 +1286,7 @@ static int updKernTime(struct timeCardInfo *tci)
 	tci->ntpa_freq = tx.freq;
 	tci->ntpa_status = tx.status;
 	tci->kernel_offset_acc = 0;
+	tci->kernel_offset_nz_count = 0;
 	if (err < 0 || err > 5)
 		return err;
 	return 0;
