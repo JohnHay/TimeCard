@@ -392,7 +392,7 @@ void usage(void) {
 #endif
 	printf("\t-C refv,mult: enable clock temperature compensation. Refv and mult are floats.\n");
 	printf("\t-c: enable clock monitoring\n");
-	printf("\t-d driftfile: file to periodically write the drift values, used to spead startup\n");
+	printf("\t-d driftfile: file to periodically write the drift values, used to speed up startup\n");
 	printf("\t-f timecard device: default /dev/timecard0\n");
 	printf("\t-h: hot start, assuming the drift is valid \n");
 	printf("\t-k: enable kernel synchronisation\n");
