@@ -418,7 +418,7 @@ int main(int argc, char **argv)
 	tcInfo.enable_bme = 1;
 #endif
 
-	while((ch = getopt(argc, argv, "B:bC:cd:f:hkl:sT:tv")) != -1)
+	while((ch = getopt(argc, argv, "aB:bC:cd:f:hkl:sT:tv")) != -1)
 		switch(ch) {
 		case 'a':
 			tcInfo.enable_aging = 1;
