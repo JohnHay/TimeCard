@@ -342,6 +342,7 @@ static void huphandler(int _val);
 static void termhandler(int _val);
 void bind_cpu(unsigned int cpunr);
 
+static void displaydiff(struct timeCardInfo *tci);
 static int findiicdevs(struct timeCardInfo *tci);
 static int parse_temp_comp_arg(struct timeCardInfo *tci, char *argstr);
 static int parse_train_arg(struct timeCardInfo *tci, char *argstr);
@@ -408,13 +409,13 @@ void usage(void) {
 
 int main(int argc, char **argv)
 {
-	int ch, err, hotstart = 0, verbose = 0;
+	int ch, err, hotstart = 0, readdiff = 0, verbose = 0;
 	struct timespec now, nextup, tsleep;
 	struct shmTime volatile* shm;
 
 	pname = argv[0];
 
-	while((ch = getopt(argc, argv, "aB:bC:cd:f:hkl:sT:tv")) != -1)
+	while((ch = getopt(argc, argv, "aB:bC:cd:f:hkl:rsT:tv")) != -1)
 		switch(ch) {
 		case 'a':
 			tcInfo.enable_aging = 1;
@@ -451,6 +452,9 @@ int main(int argc, char **argv)
 			tcInfo.logfname = optarg;
 			tcInfo.logf = fopen(optarg, "a");
 			break;
+		case 'r':
+			readdiff = 1;
+			break;
 		case 's':
 			tcInfo.enable_shm = 1;
 			break;
@@ -473,6 +477,15 @@ int main(int argc, char **argv)
 	if (tcInfo.tcdevname == NULL) {
 		tcInfo.tcdevname = malloc(DEVLEN);
 		sprintf(tcInfo.tcdevname, "%s%s", DEVPREF, DEFAULTDEV);
+	}
+	if (readdiff) {
+		err = initdevs(&tcInfo);
+		if (err) {
+			printf("Could not open %s.\n", tcInfo.tcdevname);
+			exit(ENXIO);
+		}
+		displaydiff(&tcInfo);
+		exit(0);
 	}
 	err = findiicdevs(&tcInfo);
 	if (err) {
@@ -719,6 +732,38 @@ static int findiicdevs(struct timeCardInfo *tci)
 	return 1;
 }
 
+static void displaydiff(struct timeCardInfo *tci)
+{
+	int err;
+	int64_t kernel_offset;
+	struct timecard_status gs;
+	struct timecard_time gt;
+	struct timespec target;
+
+	err = ioctl(tci->tcfd, TCIOCGETTIME, (caddr_t)&gt);
+	if (err) {
+		perror("ioctl TCIOCGETTIME\n");
+		exit (EIO);
+	}
+	err = ioctl(tci->tcfd, TCIOCGETSTATUS, (caddr_t)&gs);
+	if (err) {
+		perror("ioctl TCIOCGETSTATUS\n");
+		exit (EIO);
+	}
+	tci->rcvTstmp = gt.kernel;
+	tci->tcardClk = gt.card;
+	tci->tod_utc_status = gs.tod_utc_status;
+	if (tci->tod_utc_status & TC_TOD_UTC_STATUS_UTC_VALID)
+		tci->tai_offset = (int)(tci->tod_utc_status & TC_TOD_UTC_STATUS_UTC_OFFSET_MASK);
+	target = tci->tcardClk;
+	target.tv_sec -= tci->tai_offset;
+	tci->kernel_offset = timespecoffset(&target, &tci->rcvTstmp);
+
+	printf("DIFF %jd TC %lu.%09lu OS %lu.%09lu\n", tci->kernel_offset,
+	    tci->tcardClk.tv_sec, tci->tcardClk.tv_nsec,
+	    tci->rcvTstmp.tv_sec, tci->rcvTstmp.tv_nsec);
+}
+
 /*
  * expect to floats seperated with a comma ',' or space ' ', eg. "0.92,2.4".
  */
@@ -791,6 +836,9 @@ static int parse_train_arg(struct timeCardInfo *tci, char *argstr)
 	return retv;
 }
 
+/*
+ * For readdiff only tcdevname will be initialized.
+ */
 static int initdevs(struct timeCardInfo *tci)
 {
 	int err = 0;
@@ -800,17 +848,21 @@ static int initdevs(struct timeCardInfo *tci)
 	else
 		printf("using %s", tci->tcdevname);
 
-	tci->iic.fd = open(tci->iic.devname, O_RDWR);
-	if (tci->iic.fd == -1)
-		perror(tci->iic.devname);
-	else
-		printf(", %s", tci->iic.devname);
+	if (tci->iic.devname != NULL) {
+		tci->iic.fd = open(tci->iic.devname, O_RDWR);
+		if (tci->iic.fd == -1)
+			perror(tci->iic.devname);
+		else
+			printf(", %s", tci->iic.devname);
+	}
 
-	tci->iic_clk.fd = open(tci->iic_clk.devname, O_RDWR);
-	if (tci->iic_clk.fd == -1)
-		perror(tci->iic_clk.devname);
-	else
-		printf(", %s (CLK)", tci->iic_clk.devname);
+	if (tci->iic_clk.devname != NULL) {
+		tci->iic_clk.fd = open(tci->iic_clk.devname, O_RDWR);
+		if (tci->iic_clk.fd == -1)
+			perror(tci->iic_clk.devname);
+		else
+			printf(", %s (CLK)", tci->iic_clk.devname);
+	}
 	printf("\n");
 
 	if (tci->tcfd != -1) {
@@ -821,9 +873,9 @@ static int initdevs(struct timeCardInfo *tci)
 	}
 	if (tci->tcfd == -1)
 		err = ENXIO;
-	if (tci->iic.fd == -1)
+	if (tci->iic.devname != NULL && tci->iic.fd == -1)
 		err = ENXIO;
-	if (tci->iic_clk.fd == -1)
+	if (tci->iic_clk.devname != NULL && tci->iic_clk.fd == -1)
 		err = ENXIO;
 	return (err);
 }

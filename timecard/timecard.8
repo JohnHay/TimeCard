@@ -26,7 +26,7 @@
 .\"
 .\" Note: The date here should be updated whenever a non-trivial
 .\" change is made to the manual page.
-.Dd July 26, 2024
+.Dd June 27, 2025
 .Dt TIMECARD 8
 .Os
 .Sh NAME
@@ -43,6 +43,7 @@
 .Op Fl f Ar /dev/timecardN
 .Op Fl hk
 .Op Fl l Ar logfile
+.Op Fl r
 .Op Fl s
 .Op Fl T Ar period,min_shift,max_shift,stable
 .Op Fl tv
@@ -89,6 +90,8 @@ Assume a clock that were already disciplined or a valid drift file.
 Enable kernel synchronisation.
 .It Fl l Ar logfile
 The logfile to use for per second logs. If not specified, none will be used.
+.It Fl r
+Read and display the time difference in nanoseconds between the TimeCard and Operating System (kernel) and then exit.
 .It Fl s
 Enable ntp shm shared memory interface.
 .It Fl T Ar period,min_shift,max_shift,stable

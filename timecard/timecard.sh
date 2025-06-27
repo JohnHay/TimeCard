@@ -57,11 +57,12 @@ load_rc_config $name
 # Set defaults
 : ${timecard_enable:="NO"}
 : ${timecard_hints:=${timecard_default_hints}}
+: ${timecard_insync_ns:=100000000}
 : ${timecard_sync_wait:=30}
 : ${required_modules:=${timecard_modules}}
 : ${required_modules:=${timecard_default_modules}}
 
-timecard_wait()
+timecard_pre_wait()
 {
 	local to=${timecard_sync_wait}
 	local insync
@@ -74,6 +75,24 @@ timecard_wait()
 		fixok=`sysctl -n dev.timecard.0.status.gnss_fix_ok`
 		if [ ${insync} -eq 1 -a ${utcvalid} -eq 1 -a ${fixok} -eq 1 ]; then
 			break;
+		fi
+		sleep 1
+		to=$((${to}-1))
+	done
+}
+
+timecard_post_wait()
+{
+	local to=${timecard_sync_wait}
+	local rdline
+	local diff
+
+	while [ ${to} -gt 0 ]; do
+		rdline=`${procname} -r`
+		diff=${rdline##*DIFF }
+		diff=${diff%% TC*}
+		if [ ${diff} -lt ${timecard_insync_ns} ]; then
+			break
 		fi
 		sleep 1
 		to=$((${to}-1))
@@ -107,9 +126,10 @@ timecard_start()
 	if [ -n "${timecard_pps_symlink}" ]; then
 		ln -f -s ${timecard_pps_symlink}
 	fi
-	timecard_wait
+	timecard_pre_wait
 	/sbin/sysctl kern.timecounter.hardware="TimeCard"
 	$command $command_args $timecard_flags
+	timecard_post_wait
 }
 
 run_rc_command "$1"
