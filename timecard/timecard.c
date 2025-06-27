@@ -227,6 +227,7 @@ struct timeCardInfo {
 	struct axi_iic_info iic;
 	struct axi_iic_info iic_clk;
 
+	int enable_aging;
 	int enable_bindcpu;
 	int bindcpu;
 #ifdef USE_BME
@@ -376,7 +377,7 @@ static void calcaging(struct timeCardInfo *tci);
 static void driftfupdate(struct timeCardInfo *tci);
 
 void usage(void) {
-	printf("usage: %s [-B cpuid] %s[-C refv,mult] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-T period,min_shift,max_shift,stable] [-t] [-v]\n",
+	printf("usage: %s [-a] [-B cpuid] %s[-C refv,mult] [-c] [-d driftfile] [-f /dev/timecardN] [-l logfile] [-k] [-s] [-T period,min_shift,max_shift,stable] [-t] [-v]\n",
 	    pname,
 #ifdef USE_BME
 	    "[-b] "
@@ -384,6 +385,7 @@ void usage(void) {
 	    ""
 #endif
 	    );
+	printf("\t-a: enable clock aging\n");
 	printf("\t-B cpuid: bind process to cpu\n");
 #ifdef USE_BME
 	printf("\t-b: enable bme environmental monitoring\n");
@@ -418,6 +420,9 @@ int main(int argc, char **argv)
 
 	while((ch = getopt(argc, argv, "B:bC:cd:f:hkl:sT:tv")) != -1)
 		switch(ch) {
+		case 'a':
+			tcInfo.enable_aging = 1;
+			break;
 		case 'B':
 			tcInfo.enable_bindcpu = 1;
 			tcInfo.bindcpu = strtol(optarg, NULL, 0);
@@ -592,7 +597,8 @@ int main(int argc, char **argv)
 			temp_comp(&tcInfo);
 		if (tcInfo.enable_clock && tcInfo.enable_training && tcInfo.status.time_valid) {
 			train(&tcInfo);
-			calcaging(&tcInfo);
+			if (tcInfo.enable_aging)
+				calcaging(&tcInfo);
 		}
 		if (tcInfo.enable_clock && (tcInfo.enable_training ||
 		  tcInfo.enable_clock_temp_comp))
@@ -1662,17 +1668,25 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
 
 	/* Probably a cold start, but with a driftfile */
 	if (tci->xo_offset == 0.0 && (tci->dfaging != 0.0 || tci->dfoffset != 0.0)) {
-		tci->aging = tci->dfaging;
+		if (tci->enable_aging)
+			tci->aging = tci->dfaging;
+		else
+			tci->aging = 0.0;
 		tci->train_pull = tci->dfoffset;
 		xo_update(tci);
 		cold = 1;
 	/* Warm start, assume the values in the XO is more correct. */
 	} else if (tci->xo_offset != 0.0) {
-		tci->aging = tci->xo_aging;
+		if (tci->enable_aging)
+			tci->aging = tci->xo_aging;
+		else
+			tci->aging = 0.0;
 		/* Can happen if we move from manual aging */
-		if ((tci->xo_aging == 0.0) && (tci->dfoffset != 0.0))
+		if (tci->enable_aging && (tci->xo_aging == 0.0) && (tci->dfoffset != 0.0))
 			tci->aging = tci->dfaging;
 		tci->train_pull = tci->xo_pull;
+		/* in case we move from aging enabled to disabled */
+		xo_update(tci);
 	}
 	if (tcInfo.enable_clock_temp_comp && tci->train_pull != 0.0)
 		tci->train_pull -= tci->temp_comp;

@@ -34,6 +34,7 @@
 .Nd "synchronise kernel time and provide ntpd(8) with time using an OCP TAP TimeCard"
 .Sh SYNOPSIS
 .Nm
+.Op Fl a
 .Op Fl B Ar cpuid
 .Op Fl b
 .Op Fl C Ar refv,mult
@@ -61,6 +62,8 @@ Clock interface.
 .Pp
 The options are as follows:
 .Bl -tag -width "-d /dev/timecardN"
+.It Fl a
+Enable TimeCard clock aging.
 .It Fl B Ar cpuid
 Bind process to cpu.
 .It Fl b
