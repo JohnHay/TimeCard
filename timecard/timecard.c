@@ -80,6 +80,8 @@
 
 #define STEP_THRESH	(2*1000*1000*1000)	/* Step if more than 2 seconds */
 #define SECONDSPERDAY	(24 * 60 * 60)
+#define INIT_AGING_OFFSET	(3 * 60 * 60)
+#define INIT_DRIFTF_OFFSET	(3 * 60 * 60)
 
 /* If a timecounter uses a frequency of 1GHz the math introduces a small error. */
 #define FBSD_FREQ_ERR	(1.52588e-05)
@@ -365,7 +367,7 @@ static void timespec_sub(struct timespec *_v1, struct timespec *_v2,
 static int temp_comp_init(struct timeCardInfo *tci);
 static int temp_comp(struct timeCardInfo *tci);
 static int train_init(struct timeCardInfo *tci, int hotstart);
-static int train_reset(struct timeCardInfo *tci);
+static int train_reset(struct timeCardInfo *tci, struct timespec *_ts);
 static int train(struct timeCardInfo *tci);
 static int xo_init(struct timeCardInfo *tci);
 static int xo_stats(struct timeCardInfo *tcInfo);
@@ -542,8 +544,8 @@ int main(int argc, char **argv)
 	}
 
 	/* update drift file every 3 hours */
-	tcInfo.nextdriftf = now.tv_sec + (3 * 60 * 60);
-	tcInfo.nextaging = now.tv_sec + (3 * 60 * 60);
+	tcInfo.nextdriftf = now.tv_sec + INIT_DRIFTF_OFFSET;
+	tcInfo.nextaging = now.tv_sec + INIT_AGING_OFFSET;
 
 #ifdef USE_BME
 	if (tcInfo.enable_bme)
@@ -564,7 +566,12 @@ int main(int argc, char **argv)
 		err = captureTime(&tcInfo);
 		if (err == 1) {
 			/* Time was stepped */
-			clock_gettime(CLOCK_REALTIME, &nextup);
+			clock_gettime(CLOCK_REALTIME, &now);
+			nextup = now;
+			/* update drift file every 3 hours */
+			tcInfo.nextdriftf = now.tv_sec + INIT_DRIFTF_OFFSET;
+			tcInfo.nextaging = now.tv_sec + INIT_AGING_OFFSET;
+			train_reset(&tcInfo, &now);
 		}
 
 		if (tcInfo.status.time_valid) {
@@ -1015,8 +1022,6 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 			printf("Time stepped offset %jd to %lu.%09lu\n", tci->kernel_offset,
 			    gt.card.tv_sec, gt.card.tv_nsec);
 			fflush(stdout);
-
-			train_reset(tci);
 		}
 		st->count = 5;
 		st->state = TC_PRESYNC;
@@ -1059,7 +1064,7 @@ static int updateTimeStatus(struct timeCardInfo *tci)
 			if (st->time_valid == 0) {
 				st->time_valid = 1;
 				if (tcInfo.enable_training)
-					train_reset(tci);
+					train_reset(tci, &tci->rcvTstmp);
 			}
 			break;
 		}
@@ -1682,7 +1687,7 @@ static int train_init(struct timeCardInfo *tci, int hotstart)
  * Used to clear the training info. For instance when the card
  * is not in sync yet.
  */
-static int train_reset(struct timeCardInfo *tci)
+static int train_reset(struct timeCardInfo *tci, struct timespec *_ts)
 {
 	tci->drift_acc_total = 0;
 	tci->drift_acc_total_count = 0;
@@ -1694,7 +1699,7 @@ static int train_reset(struct timeCardInfo *tci)
 	tci->offset_acc_count = 0;
 	tci->offset_acc = 0;
 
-	tci->nexttrain = tci->rcvTstmp.tv_sec + tci->train_period;
+	tci->nexttrain = _ts->tv_sec + tci->train_period;
 
 	return 0;
 }
@@ -2030,6 +2035,11 @@ static void calcaging(struct timeCardInfo *tci)
 	pullstatsadd(tci);
 	if (tci->pullbcnt == 1) {
 		tci->nextaging += SECONDSPERDAY;
+		/* in case of stepped time */
+		if (tci->nextaging < tci->rcvTstmp.tv_sec)
+			tci->nextaging = tci->rcvTstmp.tv_sec + SECONDSPERDAY;
+		if (tci->nextaging > (tci->rcvTstmp.tv_sec + SECONDSPERDAY))
+			tci->nextaging = tci->rcvTstmp.tv_sec + SECONDSPERDAY;
 		printf("First pull sample %lu\n", tci->rcvTstmp.tv_sec);
 		fflush(stdout);
 		return;
@@ -2054,6 +2064,8 @@ static void calcaging(struct timeCardInfo *tci)
 	if (tci->aging == 0.0)
 		tci->aging = taging;
 	tci->aging += ((taging - tci->aging) / div);
+	if ((tci->aging > XO_AGING_MAX) || (tci->aging < -XO_AGING_MAX))
+		tci->aging = 0.0;
 	tci->nextaging += SECONDSPERDAY;
 	printf("Aging %e ns/s, avg %e, period %lu s, total over period %e, tadj %e\n",
 		    taging, tci->aging, tperiod, lastpull - prevpull, tci->train_adj);
