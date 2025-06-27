@@ -414,10 +414,6 @@ int main(int argc, char **argv)
 
 	pname = argv[0];
 
-#ifdef USE_BME
-	tcInfo.enable_bme = 1;
-#endif
-
 	while((ch = getopt(argc, argv, "aB:bC:cd:f:hkl:sT:tv")) != -1)
 		switch(ch) {
 		case 'a':
@@ -430,7 +426,7 @@ int main(int argc, char **argv)
 		case 'b':
 			/* Silently do nothing if not defined. */
 #ifdef USE_BME
-			tcInfo.enable_bme = 0;
+			tcInfo.enable_bme = 1;
 #endif
 			break;
 		case 'C':
