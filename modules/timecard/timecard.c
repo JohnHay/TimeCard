@@ -652,8 +652,7 @@ static struct resource *
 timecard_bus_alloc_resource(device_t dev, device_t child, int type, int *rid,
     rman_res_t start, rman_res_t end, rman_res_t count, u_int flags);
 static int
-timecard_bus_release_resource(device_t dev, device_t child, int type, int rid,
-    struct resource *res);
+timecard_bus_release_resource(device_t dev, device_t child, struct resource *res);
 static int
 timecard_bus_get_resource(device_t dev, device_t child, int type, int rid,
     rman_res_t *startp, rman_res_t *countp);
@@ -1898,9 +1897,10 @@ timecard_bus_alloc_resource(device_t dev, device_t child, int type, int *rid,
 }
 
 static int
-timecard_bus_release_resource(device_t dev, device_t child, int type, int rid,
-    struct resource *res)
+timecard_bus_release_resource(device_t dev, device_t child, struct resource *res)
 {
+	int rid = rman_get_rid(res);
+	int type = rman_get_type(res);
 	struct timecard_port *port;
 	device_t originator;
 
@@ -1915,7 +1915,7 @@ timecard_bus_release_resource(device_t dev, device_t child, int type, int rid,
 	KASSERT(port != NULL, ("%s %d", __func__, __LINE__));
 
 	if (type == SYS_RES_IRQ)
-		return BUS_RELEASE_RESOURCE(device_get_parent(dev), dev, type, rid, res);
+		return BUS_RELEASE_RESOURCE(device_get_parent(dev), dev, res);
 
 	if (rid != 0 || res == NULL)
 		return (EINVAL);

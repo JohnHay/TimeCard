@@ -178,7 +178,7 @@ axi_iic_attach(device_t dev)
 		sc->sc_res = NULL;
 		return (ENXIO);
 	}
-	bus_generic_attach(dev);
+	bus_attach_children(dev);
 	return (0);
 }
 
