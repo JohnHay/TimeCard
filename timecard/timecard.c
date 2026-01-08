@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2024 John Hay
+ * Copyright (c) 2026 John Hay
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -99,7 +99,7 @@
 #define TEMP_COMP_CNT	30
 
 #define MIN_KERN_SHIFT		0
-#define MAX_KERN_SHIFT		8
+#define MAX_KERN_SHIFT		4
 #define MAX_KERN_STABLE		8
 
 #define DEVLEN			20		/* device name should not be longer */
@@ -1275,8 +1275,11 @@ static int updKernTime(struct timeCardInfo *tci)
 		tci->ntpa_freq = tx.freq;
 		tci->ntpa_status = tx.status;
 		if (tci->kern_shift && ((tci->rcvTstmp.tv_sec - tci->kernel_upd_tstmp) < 1 << (tci->kern_shift - 1))) {
-			tci->kernel_offset_acc = 0;
-			tci->kernel_offset_nz_count = 0;
+			/* Only clear it if we are far away */
+			if (tci->kernel_offset_acc > 1 << tci->kern_shift) {
+				tci->kernel_offset_acc = 0;
+				tci->kernel_offset_nz_count = 0;
+			}
 		}
 		return 0;
 	}
