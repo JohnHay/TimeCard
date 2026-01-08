@@ -17,9 +17,11 @@ RCDNAME=	timecard
 RCDDIR=		/usr/local/etc/rc.d
 RCDMODE=	555
 
+USE_BME=	yes
 .if USE_BME
-SRCS+=	BME280_driver-master/bme280.c
-CFLAGS+=	-I BME280_driver-master
+BME_DIR?=../../BME280_SensorAPI-master
+SRCS+=	${BME_DIR}/bme280.c
+CFLAGS+=	-I ${BME_DIR} -DUSE_BME
 .endif
 
 .include <bsd.prog.mk>
