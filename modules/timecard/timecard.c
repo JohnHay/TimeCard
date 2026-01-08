@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2024 John Hay
+ * Copyright (c) 2026 John Hay
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
